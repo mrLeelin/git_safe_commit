@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Safe Commit"
+  short_description: "AI-led guarded Git commit workflow with recovery, observer UI, conflict handling, and read-only verification agents."
+  default_prompt: "Use $git-safe-commit to safely inspect, create recovery points, sync with fetch plus rebase, resolve conflicts, commit only the requested files, and push. Treat AI as the Git executor; use the guard server and HTML page only for status, logs, recovery evidence, binary conflict export, and user confirmations."

@@ -3,3 +3,6 @@ config.json
 node_modules/
 __pycache__/
 *.pyc
+.codex/skills/
+.claude/skills/
+.kiro/skills/
