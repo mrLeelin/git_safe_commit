@@ -147,24 +147,34 @@ function writeEvent(res, event, data) {
 function parseCommitGraph(stdout) {
   return stdout.split(/\r?\n/).filter(Boolean).map((line, index) => {
     const [hash, shortHash, parents, refs, author, subject, date] = line.split("\x1f");
+    const parsedRefs = parseRefs(refs || "");
     return {
       hash,
       shortHash,
       parents: parents ? parents.split(/\s+/).filter(Boolean) : [],
-      refs: parseRefs(refs || ""),
+      refs: parsedRefs.refs,
       author,
       subject,
       date,
       lane: index % 4,
-      isHead: /\bHEAD\b/.test(refs || "")
+      isHead: Boolean(parsedRefs.current)
     };
   });
 }
 
 function parseRefs(refs) {
-  return refs
+  let current = "";
+  const parsed = refs
     .split(",")
     .map((ref) => ref.trim())
     .filter(Boolean)
-    .map((ref) => ref.replace(/^HEAD -> /, "").replace(/^origin\//, "origin/"));
+    .map((ref) => {
+      const match = /^HEAD -> (.+)$/.exec(ref);
+      if (match) {
+        current = match[1];
+        return current;
+      }
+      return ref.replace(/^origin\//, "origin/");
+    });
+  return { current, refs: [...new Set(parsed)] };
 }
