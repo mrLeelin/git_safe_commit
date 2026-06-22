@@ -1,0 +1,23 @@
+{
+  "repoPath": "E:\\Project\\Work\\JellybeanUnity",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8080
+  },
+  "ai": {
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKey": "replace-with-your-key",
+    "model": "gpt-5.5",
+    "temperature": 0.1
+  },
+  "git": {
+    "mainBranch": "master",
+    "defaultBranch": "dev",
+    "autoFetch": true
+  },
+  "workflow": {
+    "autoCreateRecovery": true,
+    "requireConfirmBeforePush": true,
+    "maxAutoResolveAttempts": 2
+  }
+}

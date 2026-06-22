@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Git 冲突处理工作台</title>
+  <link rel="stylesheet" href="/panel/styles.css">
+</head>
+<body>
+  <div class="layout">
+    <aside>
+      <div class="brand">G</div>
+      <h1>Git 冲突处理</h1>
+      <p class="muted side-intro">用于处理 rebase 和显式 merge 期间的冲突证据、文本对比合并和表格对比合并；commit、push、rebase continue 仍由 Codex 在终端执行。</p>
+      <p class="muted">这个页面只用于观察、对比、记录和确认。Git 主流程仍由 Codex 在终端执行，页面不会执行 rebase、merge、commit、push 或 continue。</p>
+
+      <div class="panel" style="margin-top:18px;">
+        <div class="pill"><span id="serverDot" class="dot"></span><span id="serverText">正在连接本地服务</span></div>
+        <div class="pill" style="margin-top:8px;"><span id="eventDot" class="dot"></span><span id="eventText">等待实时事件</span></div>
+        <div id="repoRoot" class="muted" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="side-section">
+        <h3>主题</h3>
+        <button class="theme-toggle" id="themeToggleBtn" type="button" aria-pressed="false">
+          <span class="theme-toggle-track"><span class="theme-toggle-thumb"></span></span>
+          <span id="themeToggleText">白天模式</span>
+        </button>
+      </div>
+
+      <div class="side-section">
+        <h3>快捷操作</h3>
+        <div class="side-actions">
+          <button class="side-action primary" data-click-target="refreshBtn">刷新状态</button>
+          <button class="side-action" data-click-target="scopeBtn">提交范围</button>
+          <button class="side-action" data-click-target="conflictBtn">冲突检查</button>
+          <button class="side-action" data-click-target="logsBtn">日志</button>
+          <button class="side-action" data-click-target="outputBtn">输出</button>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <h3>定位</h3>
+        <nav class="side-nav" aria-label="工作台定位">
+          <a href="#topPanel">总览</a>
+          <a href="#riskPanel">风险 / 下一步</a>
+          <a href="#recoveryPanel">恢复点</a>
+          <a href="#blockerPanel">阻断项</a>
+          <a href="#statusPanel">当前状态</a>
+          <a href="#candidatePanel">合并结果</a>
+        </nav>
+      </div>
+
+      <div class="rules side-rules">
+        <span class="rule">页面不执行 rebase</span>
+        <span class="rule">页面不执行 merge</span>
+        <span class="rule">页面不提交</span>
+        <span class="rule">页面不推送</span>
+      </div>
+
+      <div class="phase-list">
+        <div class="phase"><strong>Inspect</strong><small>读取分支、upstream、工作区、冲突和风险。</small></div>
+        <div class="phase"><strong>Recovery</strong><small>rebase 或显式 merge 前创建 backup branch、patch 和日志。</small></div>
+        <div class="phase"><strong>Sync</strong><small>Codex 执行 fetch/rebase，页面只观察状态。</small></div>
+        <div class="phase"><strong>Merge</strong><small>仅在用户明确说 merge/合并时由 Codex 执行，页面只观察状态。</small></div>
+        <div class="phase"><strong>Conflict</strong><small>对比工作台生成候选；Codex 验证后再放回原路径并暂存。</small></div>
+        <div class="phase"><strong>Scope</strong><small>核对 staged 范围，避免无关文件进入提交。</small></div>
+        <div class="phase"><strong>Verify</strong><small>确认 HEAD/upstream、ahead/behind、冲突和工作区状态。</small></div>
+      </div>
+
+      <div class="rules">
+        <span class="rule">禁止 git pull</span>
+        <span class="rule">禁止 reset --hard</span>
+        <span class="rule">禁止 git clean</span>
+        <span class="rule">禁止 stash pop</span>
+        <span class="rule">禁止 force push</span>
+      </div>
+    </aside>
+
+    <main>
+      <section class="hero" id="topPanel">
+        <div class="toolbar">
+          <span class="pill"><span id="phaseDot" class="dot"></span><span id="phaseText">阶段：未知</span></span>
+          <span class="pill" id="branchPill">分支：读取中</span>
+          <span class="pill" id="syncPill">同步：读取中</span>
+        </div>
+        <h2 id="headline">等待状态</h2>
+        <div id="phaseNote" class="muted">正在读取 guard 状态。</div>
+        <div class="toolbar">
+          <button class="btn" id="refreshBtn">刷新状态</button>
+          <button class="btn secondary" id="scopeBtn">查看提交范围</button>
+          <button class="btn secondary" id="conflictBtn">查看冲突</button>
+          <button class="btn secondary" id="logsBtn">查看日志</button>
+          <button class="btn secondary" id="outputBtn">查看输出</button>
+        </div>
+      </section>
+
+      <section class="grid three">
+        <div class="metric">
+          <div class="label">Ahead</div>
+          <div class="value" id="aheadValue">-</div>
+        </div>
+        <div class="metric">
+          <div class="label">Behind</div>
+          <div class="value" id="behindValue">-</div>
+        </div>
+        <div class="metric">
+          <div class="label">工作区</div>
+          <div class="value" id="dirtyValue">-</div>
+        </div>
+      </section>
+
+      <section class="grid" id="riskPanel">
+        <div class="panel">
+          <h3>风险摘要</h3>
+          <div id="riskBox" class="box">等待状态。</div>
+        </div>
+        <div class="panel">
+          <h3>下一步建议</h3>
+          <div id="nextBox" class="box warn">页面只给建议，不执行 Git 主流程。</div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="panel" id="recoveryPanel">
+          <h3>恢复点</h3>
+          <div id="recoveryBox" class="box warn">尚未读取恢复点。</div>
+        </div>
+        <div class="panel" id="blockerPanel">
+          <h3>阻断项</h3>
+          <div id="blockerBox" class="box">暂无阻断项。</div>
+        </div>
+      </section>
+
+      <section class="panel" id="statusPanel">
+        <h3>当前状态</h3>
+        <div id="statusBox" class="box">等待读取。</div>
+      </section>
+
+      <section class="panel" id="candidatePanel" hidden>
+        <h3>合并结果</h3>
+        <div id="candidateBox" class="box">暂无合并结果。</div>
+      </section>
+
+    </main>
+  </div>
+
+  <div id="viewerBackdrop" class="viewer-backdrop" aria-hidden="true">
+    <div class="viewer" role="dialog" aria-modal="true" aria-labelledby="viewerTitle">
+      <div class="viewer-head">
+        <div>
+          <div id="viewerTitle" class="viewer-title">查看结果</div>
+          <div class="muted">只显示 guard 读取结果，不执行 Git 主流程。</div>
+        </div>
+        <div class="viewer-actions">
+          <button class="btn secondary" id="copyViewerBtn">复制</button>
+          <button class="btn" id="closeViewerBtn">关闭</button>
+        </div>
+      </div>
+      <pre id="viewerBody" class="output viewer-body">等待操作。</pre>
+    </div>
+  </div>
+
+  <div id="excelModalBackdrop" class="excel-modal-backdrop" aria-hidden="true">
+    <div class="excel-modal" role="dialog" aria-modal="true" aria-labelledby="excelModalTitle">
+      <div class="excel-modal-head">
+        <div>
+          <div id="excelModalTitle" class="excel-modal-title">表格冲突合并</div>
+          <div class="muted">从真实 rebase 或显式 merge 冲突阻断项打开；只生成候选文件，不覆盖原路径，不执行 Git 主流程。</div>
+        </div>
+        <div class="excel-modal-actions">
+          <button class="btn secondary" id="resetExcelChoicesBtn" disabled>恢复初始值</button>
+          <button class="btn secondary" id="writeCandidateBtn" disabled>生成候选合并文件</button>
+          <button class="btn secondary" id="closeExcelModalBtn">关闭</button>
+        </div>
+      </div>
+      <div class="excel-modal-body">
+        <div class="hidden-controls">
+          <input id="binaryPath" placeholder="例如 JellybeanUnity/Tools/Datas/Assets/SoundConfig.xlsx">
+        </div>
+        <div id="binaryBox" class="box warn">请选择阻断项里的 .xlsx 表格冲突合并按钮。</div>
+        <div id="excelWorkbench" class="workbench"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="textModalBackdrop" class="excel-modal-backdrop" aria-hidden="true">
+    <div class="excel-modal text-modal" role="dialog" aria-modal="true" aria-labelledby="textModalTitle">
+      <div class="excel-modal-head">
+        <div>
+          <div id="textModalTitle" class="excel-modal-title">文本合并工作台</div>
+          <div class="muted">用于 rebase 或显式 merge 自动合并失败后的人工选择；只生成候选文本文件，不覆盖原路径，不执行 Git 主流程。</div>
+        </div>
+        <div class="excel-modal-actions">
+          <button class="btn secondary" id="writeTextCandidateBtn" disabled>生成文本候选文件</button>
+          <button class="btn secondary" id="closeTextModalBtn">关闭</button>
+        </div>
+      </div>
+      <div class="excel-modal-body">
+        <div id="textBox" class="box warn">请选择阻断项里的文本合并工作台按钮。</div>
+        <div id="textWorkbench" class="workbench"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/panel/app.mjs"></script>
+</body>
+</html>
