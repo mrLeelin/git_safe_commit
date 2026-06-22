@@ -1,83 +1,115 @@
-import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { defaultConfigPath, loadConfig, maskConfig, saveConfig } from "./lib/config.mjs";
+import { runGit } from "./lib/git-executor.mjs";
 import { createWorkflowRunner } from "./lib/workflow-runner.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const toolRoot = path.dirname(__filename);
-const publicDir = path.join(toolRoot, "public");
 const configPath = defaultConfigPath();
 let config = await loadConfig(configPath, { allowMissing: true });
 const eventClients = new Set();
 const sessionLogs = [];
-
 let runner = createRunner(config);
 
-const server = createServer(async (req, res) => {
+const app = express();
+app.disable("x-powered-by");
+app.use(express.json({ limit: "1mb" }));
+
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true, tool: "git-safe-commit-tool", repoPath: config.repoPath });
+});
+
+app.get("/api/config", (_req, res) => {
+  res.json({ ok: true, config: maskConfig(config) });
+});
+
+app.post("/api/config", async (req, res, next) => {
   try {
-    const url = new URL(req.url, `http://${config.server.host}:${config.server.port}`);
-    if (req.method === "OPTIONS") {
-      json(res, 200, { ok: true });
-      return;
-    }
-
-    if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
-      await sendAsset(res, "index.html");
-      return;
-    }
-    if (req.method === "GET" && url.pathname === "/favicon.ico") {
-      res.writeHead(204, { "cache-control": "no-store" });
-      res.end();
-      return;
-    }
-    if (req.method === "GET" && url.pathname.startsWith("/public/")) {
-      await sendAsset(res, url.pathname.slice("/public/".length));
-      return;
-    }
-    if (req.method === "GET" && url.pathname === "/api/health") {
-      json(res, 200, { ok: true, tool: "git-safe-commit-tool", repoPath: config.repoPath });
-      return;
-    }
-    if (req.method === "GET" && url.pathname === "/api/config") {
-      json(res, 200, { ok: true, config: maskConfig(config) });
-      return;
-    }
-    if (req.method === "POST" && url.pathname === "/api/config") {
-      const body = await readJson(req);
-      config = await saveConfig(body.config || body, configPath, { currentConfig: config });
-      runner = createRunner(config);
-      appendLog("config-saved", { repoPath: config.repoPath, aiBaseUrl: config.ai.baseUrl, model: config.ai.model });
-      broadcast("state", { state: runner.state, logs: sessionLogs.slice(-200) });
-      json(res, 200, { ok: true, config: maskConfig(config), state: runner.state });
-      return;
-    }
-    if (req.method === "GET" && url.pathname === "/api/state") {
-      json(res, 200, { ok: true, state: runner.state, logs: sessionLogs.slice(-200) });
-      return;
-    }
-    if (req.method === "GET" && url.pathname === "/api/events") {
-      openEventStream(req, res);
-      return;
-    }
-    if (req.method === "POST" && url.pathname.startsWith("/api/action/")) {
-      const action = url.pathname.slice("/api/action/".length);
-      const body = await readJson(req);
-      const result = await runner.run(action, body);
-      json(res, 200, result);
-      return;
-    }
-
-    json(res, 404, { ok: false, error: `not found: ${url.pathname}` });
+    config = await saveConfig(req.body.config || req.body, configPath, { currentConfig: config });
+    runner = createRunner(config);
+    appendLog("config-saved", { repoPath: config.repoPath, aiBaseUrl: config.ai.baseUrl, model: config.ai.model });
+    broadcast("state", { state: runner.state, logs: sessionLogs.slice(-200) });
+    res.json({ ok: true, config: maskConfig(config), state: runner.state });
   } catch (error) {
-    appendLog("error", { message: error.message });
-    json(res, 500, { ok: false, error: error.message });
+    next(error);
   }
 });
 
-server.listen(config.server.port, config.server.host, () => {
+app.get("/api/state", (_req, res) => {
+  res.json({ ok: true, state: runner.state, logs: sessionLogs.slice(-200) });
+});
+
+app.get("/api/git/graph", async (_req, res, next) => {
+  try {
+    const graphResult = await runGit(config.repoPath, [
+      "log",
+      "--graph",
+      "--decorate",
+      "--oneline",
+      "--all",
+      "-n",
+      "60"
+    ]);
+    const commitResult = await runGit(config.repoPath, [
+      "log",
+      "--all",
+      "--decorate=short",
+      "--date=short",
+      "--pretty=format:%H%x1f%h%x1f%P%x1f%D%x1f%an%x1f%s%x1f%ad",
+      "-n",
+      "80"
+    ]);
+    res.json({
+      ok: true,
+      graph: graphResult.stdout.split(/\r?\n/).filter(Boolean),
+      commits: parseCommitGraph(commitResult.stdout),
+      command: graphResult.command,
+      stderr: graphResult.stderr || commitResult.stderr
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/events", (req, res) => {
+  res.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-store",
+    "connection": "keep-alive",
+    "access-control-allow-origin": "*"
+  });
+  eventClients.add(res);
+  writeEvent(res, "state", { state: runner.state, logs: sessionLogs.slice(-200) });
+  req.on("close", () => eventClients.delete(res));
+});
+
+app.post("/api/action/:action", async (req, res, next) => {
+  try {
+    const result = await runner.run(req.params.action, req.body || {});
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static(path.join(toolRoot, "dist")));
+  app.get(/.*/, (_req, res) => res.sendFile(path.join(toolRoot, "dist", "index.html")));
+} else {
+  const { createServer: createViteServer } = await import("vite");
+  const vite = await createViteServer({ root: toolRoot, server: { middlewareMode: true }, appType: "spa" });
+  app.use(vite.middlewares);
+}
+
+app.use((error, _req, res, _next) => {
+  appendLog("error", { message: error.message });
+  res.status(500).json({ ok: false, error: error.message });
+});
+
+app.listen(config.server.port, config.server.host, () => {
   const url = `http://${config.server.host}:${config.server.port}`;
   console.log(`git-safe-commit-tool listening at ${url}`);
   console.log(`repo: ${config.repoPath}`);
@@ -93,62 +125,8 @@ function createRunner(nextConfig) {
   });
 }
 
-async function readJson(req) {
-  const chunks = [];
-  for await (const chunk of req) {
-    chunks.push(chunk);
-  }
-  const text = Buffer.concat(chunks).toString("utf8");
-  return text ? JSON.parse(text) : {};
-}
-
-async function sendAsset(res, relativeAsset) {
-  if (relativeAsset.includes("..") || path.isAbsolute(relativeAsset)) {
-    json(res, 404, { ok: false, error: "not found" });
-    return;
-  }
-  const fullPath = path.join(publicDir, relativeAsset);
-  const extension = path.extname(relativeAsset);
-  const contentType = extension === ".css"
-    ? "text/css; charset=utf-8"
-    : extension === ".mjs" || extension === ".js"
-      ? "text/javascript; charset=utf-8"
-      : extension === ".html"
-        ? "text/html; charset=utf-8"
-        : "application/octet-stream";
-  res.writeHead(200, { "content-type": contentType, "cache-control": "no-store" });
-  res.end(await readFile(fullPath));
-}
-
-function json(res, status, body) {
-  res.writeHead(status, {
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store",
-    "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "content-type"
-  });
-  res.end(JSON.stringify(body, null, 2));
-}
-
-function openEventStream(req, res) {
-  res.writeHead(200, {
-    "content-type": "text/event-stream; charset=utf-8",
-    "cache-control": "no-store",
-    "connection": "keep-alive",
-    "access-control-allow-origin": "*"
-  });
-  eventClients.add(res);
-  writeEvent(res, "state", { state: runner.state, logs: sessionLogs.slice(-200) });
-  req.on("close", () => eventClients.delete(res));
-}
-
 function appendLog(event, data) {
-  sessionLogs.push({
-    time: new Date().toISOString(),
-    event,
-    data
-  });
+  sessionLogs.push({ time: new Date().toISOString(), event, data });
 }
 
 function broadcast(event, data) {
@@ -164,4 +142,29 @@ function broadcast(event, data) {
 function writeEvent(res, event, data) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function parseCommitGraph(stdout) {
+  return stdout.split(/\r?\n/).filter(Boolean).map((line, index) => {
+    const [hash, shortHash, parents, refs, author, subject, date] = line.split("\x1f");
+    return {
+      hash,
+      shortHash,
+      parents: parents ? parents.split(/\s+/).filter(Boolean) : [],
+      refs: parseRefs(refs || ""),
+      author,
+      subject,
+      date,
+      lane: index % 4,
+      isHead: /\bHEAD\b/.test(refs || "")
+    };
+  });
+}
+
+function parseRefs(refs) {
+  return refs
+    .split(",")
+    .map((ref) => ref.trim())
+    .filter(Boolean)
+    .map((ref) => ref.replace(/^HEAD -> /, "").replace(/^origin\//, "origin/"));
 }

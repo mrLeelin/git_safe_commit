@@ -23,7 +23,7 @@ async function createRepo(prefix = "gsc-recovery-") {
   return repo;
 }
 
-test("createRecovery writes evidence and stashes dirty work", async () => {
+test("createRecovery writes evidence without modifying dirty work", async () => {
   const repo = await createRepo();
   await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
   await writeFile(path.join(repo, "new.txt"), "new\n", "utf8");
@@ -36,8 +36,9 @@ test("createRecovery writes evidence and stashes dirty work", async () => {
   assert.ok(existsSync(path.join(repo, recovery.backupDir, "head.txt")));
   assert.ok(existsSync(path.join(repo, recovery.backupDir, "unstaged.patch")));
   assert.ok(existsSync(path.join(repo, recovery.backupDir, "untracked-manifest.txt")));
-  assert.ok(recovery.stashRef);
+  assert.equal(recovery.stashRef, "");
 
   const status = git(repo, ["status", "--short"]);
-  assert.equal(status.trim(), "");
+  assert.match(status, / M tracked\.txt/);
+  assert.match(status, /\?\? new\.txt/);
 });

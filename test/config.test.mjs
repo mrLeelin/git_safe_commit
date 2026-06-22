@@ -22,7 +22,7 @@ test("loadConfig applies defaults and preserves explicit values", async () => {
 
   assert.equal(config.repoPath, path.resolve(dir));
   assert.equal(config.server.host, "127.0.0.1");
-  assert.equal(config.server.port, 8080);
+  assert.equal(config.server.port, 19347);
   assert.equal(config.ai.baseUrl, "https://example.test/v1");
   assert.equal(config.ai.apiKey, "local-test-secret");
   assert.equal(config.ai.model, "model-a");
@@ -32,7 +32,7 @@ test("loadConfig applies defaults and preserves explicit values", async () => {
 test("maskConfig never exposes apiKey", () => {
   const masked = maskConfig({
     repoPath: "C:/repo",
-    server: { host: "127.0.0.1", port: 8080 },
+    server: { host: "127.0.0.1", port: 19347 },
     ai: {
       baseUrl: "https://example.test/v1",
       apiKey: "local-test-secret",

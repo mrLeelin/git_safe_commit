@@ -42,7 +42,7 @@ test("server exposes health, config, and inspect action", async () => {
   const repo = await createRepo();
   const temp = await mkdtemp(path.join(os.tmpdir(), "gsc-config-"));
   const configPath = path.join(temp, "config.json");
-  const port = 18080 + Math.floor(Math.random() * 1000);
+  const port = 19347 + Math.floor(Math.random() * 1000);
   await writeFile(configPath, JSON.stringify({
     repoPath: repo,
     server: { host: "127.0.0.1", port },
@@ -68,6 +68,12 @@ test("server exposes health, config, and inspect action", async () => {
     const health = await waitForHealth(baseUrl);
     assert.equal(health.ok, true);
     assert.equal(health.repoPath, repo);
+
+    const pageResponse = await fetch(`${baseUrl}/`);
+    const page = await pageResponse.text();
+    assert.equal(pageResponse.status, 200);
+    assert.match(page, /<div id="app"><\/div>/);
+    assert.doesNotMatch(page, /\/public\/app\.mjs/);
 
     const configResponse = await fetch(`${baseUrl}/api/config`);
     const config = await configResponse.json();
@@ -98,6 +104,15 @@ test("server exposes health, config, and inspect action", async () => {
     const inspect = await inspectResponse.json();
     assert.equal(inspect.ok, true);
     assert.equal(inspect.summary.branch, "main");
+
+    const graphResponse = await fetch(`${baseUrl}/api/git/graph`);
+    const graph = await graphResponse.json();
+    assert.equal(graph.ok, true);
+    assert.ok(Array.isArray(graph.graph));
+    assert.match(graph.graph.join("\n"), /initial/);
+
+    const healthAfterInspect = await fetch(`${baseUrl}/api/health`);
+    assert.equal(healthAfterInspect.status, 200);
   } finally {
     child.kill();
   }

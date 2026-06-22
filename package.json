@@ -4,8 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "node server.mjs",
+    "build": "vite build",
+    "preview": "node server.mjs",
     "start": "node server.mjs",
     "test": "node --test"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "^6.0.3",
+    "express": "^5.2.1",
+    "vite": "^7.2.7",
+    "vue": "^3.5.26"
   },
   "engines": {
     "node": ">=18"
