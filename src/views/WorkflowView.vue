@@ -26,12 +26,31 @@ const selectedPaths = ref([]);
 const commitMessage = ref("");
 const pushConfirmed = ref(false);
 const suggestingMessage = ref(false);
+const selectionQuery = ref("");
+const lastSelectedPath = ref("");
 
 const selectedFileCount = computed(() => selectedPaths.value.length);
 const selectedFilesLabel = computed(() => `${selectedFileCount.value} / ${props.selectableFiles.length}`);
 const changedCount = computed(() => props.files.length);
 const canCommit = computed(() => !commitBlockReason.value && !props.busy);
 const canPush = computed(() => !pushBlockReason.value && !props.busy);
+const visibleSelectableFiles = computed(() => {
+  const query = selectionQuery.value.trim().toLowerCase();
+  if (!query) return props.selectableFiles;
+  return props.selectableFiles.filter((file) => {
+    return [file.path, file.group, file.status].some((value) => String(value || "").toLowerCase().includes(query));
+  });
+});
+const directoryOptions = computed(() => {
+  const counts = new Map();
+  for (const file of props.selectableFiles) {
+    const directory = topDirectory(file.path);
+    counts.set(directory, (counts.get(directory) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+});
 
 const commitBlockReason = computed(() => {
   if (!props.config?.repoPath) return "缺少仓库路径";
@@ -59,23 +78,72 @@ watch(() => props.commitResetKey, () => {
   selectedPaths.value = [];
 });
 
-function togglePath(path) {
-  selectedPaths.value = selectedPaths.value.includes(path)
-    ? selectedPaths.value.filter((item) => item !== path)
-    : [...selectedPaths.value, path];
+function togglePath(path, event) {
+  if (event?.shiftKey && lastSelectedPath.value) {
+    selectRange(lastSelectedPath.value, path);
+  } else {
+    selectedPaths.value = selectedPaths.value.includes(path)
+      ? selectedPaths.value.filter((item) => item !== path)
+      : [...selectedPaths.value, path];
+  }
+  lastSelectedPath.value = path;
 }
 
 function selectAll() {
   selectedPaths.value = props.selectableFiles.map((file) => file.path);
 }
 
+function selectVisible() {
+  addPaths(visibleSelectableFiles.value.map((file) => file.path));
+}
+
 function selectSection(sectionId) {
   const picked = props.files.filter((file) => file.selectable && file.sectionId === sectionId).map((file) => file.path);
-  selectedPaths.value = [...new Set([...selectedPaths.value, ...picked])];
+  addPaths(picked);
+}
+
+function selectDirectory(directory) {
+  const picked = props.selectableFiles
+    .filter((file) => topDirectory(file.path) === directory)
+    .map((file) => file.path);
+  addPaths(picked);
+}
+
+function invertVisibleSelection() {
+  const visiblePaths = new Set(visibleSelectableFiles.value.map((file) => file.path));
+  const selected = new Set(selectedPaths.value);
+  for (const path of visiblePaths) {
+    if (selected.has(path)) selected.delete(path);
+    else selected.add(path);
+  }
+  selectedPaths.value = [...selected];
 }
 
 function clearSelection() {
   selectedPaths.value = [];
+  lastSelectedPath.value = "";
+}
+
+function selectRange(fromPath, toPath) {
+  const paths = visibleSelectableFiles.value.map((file) => file.path);
+  const fromIndex = paths.indexOf(fromPath);
+  const toIndex = paths.indexOf(toPath);
+  if (fromIndex === -1 || toIndex === -1) {
+    addPaths([toPath]);
+    return;
+  }
+  const start = Math.min(fromIndex, toIndex);
+  const end = Math.max(fromIndex, toIndex);
+  addPaths(paths.slice(start, end + 1));
+}
+
+function addPaths(paths) {
+  selectedPaths.value = [...new Set([...selectedPaths.value, ...paths])];
+}
+
+function topDirectory(filePath) {
+  const parts = String(filePath || "").split(/[\\/]/).filter(Boolean);
+  return parts.length > 1 ? parts[0] : ".";
 }
 
 async function runCommit() {
@@ -162,21 +230,38 @@ async function ensureCommitMessage({ force = false } = {}) {
       </div>
 
       <div class="file-actions">
+        <div class="selection-filter">
+          <input v-model="selectionQuery" type="search" placeholder="搜索路径、状态或分组">
+          <button class="text-button" type="button" @click="selectVisible">选择筛选结果</button>
+        </div>
         <button class="text-button" type="button" @click="selectAll">全选可提交</button>
+        <button class="text-button" type="button" @click="invertVisibleSelection">反选当前</button>
         <button class="text-button" type="button" @click="selectSection('staged')">只选已暂存</button>
         <button class="text-button" type="button" @click="selectSection('unstaged')">只选未暂存</button>
+        <button class="text-button" type="button" @click="selectSection('untracked')">只选未跟踪</button>
         <button class="text-button" type="button" @click="clearSelection">清空选择</button>
         <button class="text-button" type="button" @click="emit('action', 'inspect')">{{ labels.refresh }}</button>
       </div>
 
+      <div v-if="directoryOptions.length" class="directory-actions">
+        <span>按目录选择</span>
+        <button
+          v-for="directory in directoryOptions"
+          :key="directory.name"
+          class="text-button"
+          type="button"
+          @click="selectDirectory(directory.name)"
+        >{{ directory.name }} ({{ directory.count }})</button>
+      </div>
+
       <div class="queue-list">
         <button
-          v-for="file in selectableFiles"
+          v-for="file in visibleSelectableFiles"
           :key="`${file.group}:${file.path}`"
           class="queue-row"
           :class="{ selected: selectedPaths.includes(file.path) }"
           type="button"
-          @click="togglePath(file.path)"
+          @click="togglePath(file.path, $event)"
         >
           <span class="checkmark" aria-hidden="true"></span>
           <span class="file-meta"><strong>{{ file.path }}</strong><small>{{ file.group }} · {{ file.status }}</small></span>

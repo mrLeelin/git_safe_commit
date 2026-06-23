@@ -417,6 +417,32 @@ textarea {
   gap: 10px;
   margin: 12px 0;
 }
+.selection-filter {
+  flex: 1 1 100%;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+.selection-filter input {
+  min-height: 34px;
+}
+.directory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: -4px 0 12px;
+  padding: 8px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+}
+.directory-actions span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
 .text-button {
   border: 0;
   border-radius: 6px;
@@ -529,6 +555,15 @@ textarea {
   border-color: var(--line);
   background: #fff;
   color: var(--ink);
+}
+.btn.suggest {
+  border-color: #d97706;
+  background: #f59e0b;
+  color: #111827;
+}
+.btn.suggest:hover:not(:disabled) {
+  background: #fbbf24;
+  filter: none;
 }
 .btn.danger { background: var(--red); }
 .btn:hover:not(:disabled) { filter: brightness(.98); }
@@ -876,6 +911,13 @@ textarea {
 .theme-dark .file-actions .text-button {
   color: #67e8f9;
 }
+.theme-dark .directory-actions {
+  border-color: #334155;
+  background: #111827;
+}
+.theme-dark .directory-actions span {
+  color: #93a4b7;
+}
 .theme-dark .conflict-box {
   border-color: #991b1b;
   background: #450a0a;
@@ -886,6 +928,14 @@ textarea {
 }
 .theme-dark .commit-actions .btn {
   background: #14b8a6;
+}
+.theme-dark .commit-actions .btn.suggest {
+  border-color: #f59e0b;
+  background: #f59e0b;
+  color: #111827;
+}
+.theme-dark .commit-actions .btn.suggest:hover:not(:disabled) {
+  background: #fbbf24;
 }
 .theme-dark .action-card .btn.secondary {
   border-color: #43556e;
