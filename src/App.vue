@@ -84,6 +84,7 @@ const themeMode = ref("dark");
 const railCollapsed = ref(false);
 const selectedPaths = ref([]);
 const commitMessage = ref("");
+const suggestingMessage = ref(false);
 const pushConfirmed = ref(false);
 const view = reactive({
   config: null,
@@ -289,6 +290,22 @@ function clearSelection() {
   selectedPaths.value = [];
 }
 
+async function suggestMessage() {
+  if (!selectedPaths.value.length) return;
+  suggestingMessage.value = true;
+  try {
+    const result = await api("/api/ai/suggest-message", {
+      method: "POST",
+      body: JSON.stringify({ paths: selectedPaths.value })
+    });
+    if (result.message) commitMessage.value = result.message;
+  } catch (error) {
+    view.details = `AI 生成提交说明失败: ${error.message}`;
+  } finally {
+    suggestingMessage.value = false;
+  }
+}
+
 function toggleTheme() {
   themeMode.value = themeMode.value === "dark" ? "light" : "dark";
 }
@@ -340,7 +357,11 @@ function openEvents() {
 
 async function api(path, options = {}) {
   const response = await fetch(path, { headers: { "content-type": "application/json" }, ...options });
-  const data = await response.json();
+  const text = await response.text();
+  let data;
+  try { data = JSON.parse(text); } catch {
+    throw new Error(text || `服务器返回了非 JSON 响应 (HTTP ${response.status})`);
+  }
   if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
   return data;
 }
@@ -420,8 +441,8 @@ function publicPayload(payload) {
       </div>
     </aside>
 
-    <main class="workspace" :class="{ 'settings-workspace': activeView === 'settings' || activeView === 'graph' }">
-      <header class="topbar" :class="{ 'settings-topbar': activeView === 'settings' || activeView === 'graph' }">
+    <main class="workspace" :class="{ 'settings-workspace': activeView !== 'graph' }">
+      <header class="topbar" :class="{ 'settings-topbar': activeView !== 'graph' }">
         <div>
           <p class="eyebrow">{{ activeView === 'workflow' ? zh.workflow : activeView === 'graph' ? 'git 树' : '系统设置' }}</p>
           <h2>{{ activeView === 'workflow' ? '检查、选择、提交、推送' : activeView === 'graph' ? '查看提交历史与分支位置' : '管理仓库、AI 与提交策略' }}</h2>
@@ -463,6 +484,7 @@ function publicPayload(payload) {
             <button class="text-button" type="button" @click="selectSection('unstaged')">只选未暂存</button>
             <button class="text-button" type="button" @click="clearSelection">清空选择</button>
             <button class="text-button" type="button" @click="runAction('inspect')">{{ zh.refresh }}</button>
+            <button class="text-button suggest" type="button" :disabled="suggestingMessage || !selectedPaths.length" @click="suggestMessage">{{ suggestingMessage ? '生成中...' : 'AI 生成说明' }}</button>
           </div>
 
           <div class="queue-list">

@@ -428,6 +428,16 @@ textarea {
 .text-button:hover {
   background: #eff6ff;
 }
+.text-button.suggest {
+  color: #14b8a6;
+  font-weight: 900;
+}
+.text-button.suggest:hover:not(:disabled) {
+  background: rgba(20, 184, 166, .08);
+}
+.text-button.suggest:disabled {
+  opacity: .55;
+}
 .queue-list {
   max-height: 360px;
   overflow: auto;
@@ -959,6 +969,216 @@ textarea {
 
 .theme-dark {
   color-scheme: dark;
+}
+.theme-dark .topbar:not(.settings-topbar) {
+  border-bottom-color: #243246;
+  background: #172233;
+}
+.theme-dark .topbar:not(.settings-topbar) .eyebrow {
+  color: #f8fafc;
+  font-size: 18px;
+}
+.theme-dark .topbar:not(.settings-topbar) h2 {
+  color: #9fb0c3;
+  font-size: 12px;
+  font-weight: 700;
+}
+.theme-dark .topbar:not(.settings-topbar) .mini-command {
+  border-color: #43556e;
+  background: #1d293b;
+  color: #dbe7f4;
+}
+.theme-dark .topbar:not(.settings-topbar) .mini-command:hover:not(:disabled) {
+  border-color: #67e8f9;
+  background: #1a3a52;
+}
+.theme-dark .topbar:not(.settings-topbar) .mini-command.danger {
+  border-color: #f87171;
+  color: #fca5a5;
+}
+.theme-dark .status-metrics .metric {
+  border-color: #26374d;
+  background: #111c2c;
+  color: #e5edf7;
+}
+.theme-dark .status-metrics .metric span {
+  color: #93a4b7;
+}
+.theme-dark .status-metrics .metric strong {
+  color: #f8fafc;
+}
+.theme-dark .status-metrics .metric.ok {
+  border-color: #166534;
+  background: #14532d;
+}
+.theme-dark .status-metrics .metric.warn {
+  border-color: #92400e;
+  background: #451a03;
+}
+.theme-dark .status-metrics .metric.bad {
+  border-color: #991b1b;
+  background: #450a0a;
+}
+.theme-dark .commit-card,
+.theme-dark .action-card,
+.theme-dark .panel {
+  border-color: #26374d;
+  background: #111c2c;
+  color: #e5edf7;
+}
+.theme-dark .commit-card h3,
+.theme-dark .action-card h3,
+.theme-dark .panel h3 {
+  color: #f8fafc;
+}
+.theme-dark .commit-card .muted,
+.theme-dark .panel .muted {
+  color: #93a4b7;
+}
+.theme-dark .counter {
+  background: #1e3a5f;
+  color: #67e8f9;
+}
+.theme-dark .commit-message label {
+  color: #93a4b7;
+}
+.theme-dark textarea,
+.theme-dark .commit-card input {
+  border-color: #43556e;
+  background: #1d293b;
+  color: #f8fafc;
+}
+.theme-dark .text-button {
+  color: #67e8f9;
+}
+.theme-dark .text-button:hover {
+  background: rgba(103, 232, 249, .08);
+}
+.theme-dark .text-button.suggest {
+  color: #2dd4bf;
+}
+.theme-dark .text-button.suggest:hover:not(:disabled) {
+  background: rgba(45, 212, 191, .1);
+}
+.theme-dark .queue-row {
+  border-color: #26374d;
+  background: #0d1625;
+  color: #e5edf7;
+}
+.theme-dark .queue-row:hover {
+  border-color: #67e8f9;
+}
+.theme-dark .queue-row.selected {
+  border-color: #14b8a6;
+  background: #12313a;
+}
+.theme-dark .queue-row .file-meta strong {
+  color: #f8fafc;
+}
+.theme-dark .queue-row .file-meta small {
+  color: #93a4b7;
+}
+.theme-dark .checkmark {
+  border-color: #43556e;
+  background: transparent;
+}
+.theme-dark .queue-row.selected .checkmark {
+  background: #14b8a6;
+  border-color: #14b8a6;
+}
+.theme-dark .file-actions .text-button {
+  color: #67e8f9;
+}
+.theme-dark .conflict-box {
+  border-color: #991b1b;
+  background: #450a0a;
+  color: #fca5a5;
+}
+.theme-dark .conflict-box code {
+  color: #fca5a5;
+}
+.theme-dark .commit-actions .btn {
+  background: #14b8a6;
+}
+.theme-dark .action-card .btn.secondary {
+  border-color: #43556e;
+  background: #111827;
+  color: #dbe7f4;
+}
+.theme-dark .action-card .btn.danger {
+  background: #dc2626;
+}
+.theme-dark .action-card .push-confirm {
+  color: #e5edf7;
+}
+.theme-dark .action-card .safety-box {
+  border-color: #31506a;
+  background: #0b1422;
+  color: #93c5fd;
+}
+.theme-dark .action-card .safety-box pre {
+  color: #93c5fd;
+}
+.theme-dark .action-card .safety-box.warn {
+  border-color: #92400e;
+  background: #451a03;
+  color: #fbbf24;
+}
+.theme-dark .action-card .safety-box.warn pre {
+  color: #fbbf24;
+}
+.theme-dark .action-card .safety-box.bad {
+  border-color: #991b1b;
+  background: #450a0a;
+  color: #fca5a5;
+}
+.theme-dark .action-card .safety-box.bad pre {
+  color: #fca5a5;
+}
+.theme-dark .action-card .disabled-reason {
+  color: #93a4b7;
+}
+.theme-dark .status-strip .status-card {
+  border-color: #26374d;
+  background: #0d1625;
+}
+.theme-dark .status-strip .status-card span {
+  color: #93a4b7;
+}
+.theme-dark .status-strip .status-card strong {
+  color: #f8fafc;
+}
+.theme-dark .file-table {
+  border-color: #26374d;
+}
+.theme-dark .file-table .table-head {
+  background: #0d1625;
+  color: #93a4b7;
+}
+.theme-dark .file-table .file-row {
+  border-color: #1e293b;
+  color: #e5edf7;
+}
+.theme-dark .file-table .file-row code {
+  color: #e5edf7;
+}
+.theme-dark .empty-state {
+  color: #64748b;
+}
+.theme-dark .logs li {
+  border-left-color: #14b8a6;
+  background: #0d1625;
+}
+.theme-dark .logs li code {
+  color: #93c5fd;
+}
+.theme-dark time {
+  color: #64748b;
+}
+.theme-dark .output {
+  border-top-color: #1e293b;
+  background: #0b1422;
+  color: #93c5fd;
 }
 
 .logs {

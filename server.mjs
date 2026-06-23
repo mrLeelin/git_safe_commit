@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { defaultConfigPath, loadConfig, maskConfig, saveConfig } from "./lib/config.mjs";
 import { detectInstalledAi } from "./lib/ai-installations.mjs";
-import { runGit } from "./lib/git-executor.mjs";
+import { runGit, pathInsideRepo } from "./lib/git-executor.mjs";
 import { createWorkflowRunner } from "./lib/workflow-runner.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -95,6 +95,72 @@ app.get("/api/events", (req, res) => {
   eventClients.add(res);
   writeEvent(res, "state", { state: runner.state, logs: sessionLogs.slice(-200) });
   req.on("close", () => eventClients.delete(res));
+});
+
+app.post("/api/ai/suggest-message", async (req, res, next) => {
+  try {
+    const paths = Array.isArray(req.body.paths) ? req.body.paths : [];
+    if (!paths.length) return res.json({ ok: true, message: "" });
+    if (!config.ai?.baseUrl || !config.ai?.apiKey) {
+      return res.status(400).json({ ok: false, error: "AI 未配置（缺少 baseUrl 或 apiKey）" });
+    }
+
+    for (const filePath of paths) {
+      pathInsideRepo(config.repoPath, filePath);
+    }
+
+    const diffResult = await runGit(config.repoPath, ["diff", "--cached", "--", ...paths]);
+    const unstagedResult = await runGit(config.repoPath, ["diff", "--", ...paths]);
+    const staged = diffResult.stdout;
+    const unstaged = unstagedResult.stdout;
+    const combinedDiff = [staged && `--- 已暂存 ---\n${staged}`, unstaged && `--- 未暂存 ---\n${unstaged}`].filter(Boolean).join("\n\n");
+
+    if (!combinedDiff.trim()) {
+      return res.json({ ok: true, message: "" });
+    }
+
+    const truncatedDiff = combinedDiff.length > 12000 ? combinedDiff.slice(0, 12000) + "\n\n[diff 已截断]" : combinedDiff;
+    const response = await fetch(`${config.ai.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "authorization": `Bearer ${config.ai.apiKey}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        model: config.ai.model,
+        temperature: 0.3,
+        max_tokens: 200,
+        messages: [
+          {
+            role: "system",
+            content: "你是 Git 提交说明生成器。根据提供的 git diff，用中文写一句简洁的提交说明（一句话，不超过 72 个字符）。只输出提交说明文本，不要输出任何其他内容。"
+          },
+          { role: "user", content: truncatedDiff }
+        ]
+      })
+    });
+
+    const text = await response.text();
+    if (!response.ok) {
+      let detail = "";
+      try { detail = JSON.parse(text).error?.message || ""; } catch {}
+      return res.status(502).json({ ok: false, error: detail || `AI 请求失败: HTTP ${response.status}` });
+    }
+    if (!text.trim()) {
+      return res.status(502).json({ ok: false, error: "AI 返回了空响应，请检查 API Key 和网络连接" });
+    }
+
+    let data;
+    try { data = JSON.parse(text); } catch {
+      return res.status(502).json({ ok: false, error: "AI 返回了非 JSON 响应" });
+    }
+
+    const message = (data.choices?.[0]?.message?.content || "").trim();
+    appendLog("ai-suggest-message", { paths, messageLength: message.length });
+    res.json({ ok: true, message });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.post("/api/action/:action", async (req, res, next) => {
