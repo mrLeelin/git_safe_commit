@@ -113,3 +113,113 @@ test("workflow runner accepts ai-commit payload and exposes commit tools", async
   assert.match(requestBodies[0].messages.at(-1).content, /"paths":\["tracked.txt"\]/);
   assert.match(git(repo, ["log", "-1", "--pretty=%s"]).trim(), /^Explain narrow commit path$/);
 });
+
+test("workflow runner uses the UI commit message even when AI tool args differ", async () => {
+  const repo = await createRepo();
+  await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
+  const responses = [
+    {
+      choices: [{
+        message: {
+          role: "assistant",
+          tool_calls: [{
+            id: "call_add",
+            type: "function",
+            function: { name: "git_add", arguments: JSON.stringify({ paths: ["tracked.txt"] }) }
+          }, {
+            id: "call_commit",
+            type: "function",
+            function: { name: "git_commit", arguments: JSON.stringify({ message: "AI ignored the UI prompt" }) }
+          }, {
+            id: "call_verify",
+            type: "function",
+            function: { name: "final_verify", arguments: "{}" }
+          }]
+        }
+      }]
+    },
+    {
+      choices: [{
+        message: {
+          role: "assistant",
+          content: "committed"
+        }
+      }]
+    }
+  ];
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {
+        baseUrl: "https://example.test/v1",
+        apiKey: "local-test-key",
+        model: "model-a",
+        temperature: 0
+      }
+    },
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => responses.shift() })
+  });
+
+  await runner.run("ai-commit", { paths: ["tracked.txt"], message: "Use this UI prompt exactly" });
+
+  assert.match(git(repo, ["log", "-1", "--pretty=%s"]).trim(), /^Use this UI prompt exactly$/);
+});
+
+test("workflow runner stages only UI selected paths even when AI tool args differ", async () => {
+  const repo = await createRepo();
+  await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
+  await writeFile(path.join(repo, "other.txt"), "other\n", "utf8");
+  git(repo, ["add", "other.txt"]);
+  git(repo, ["commit", "-m", "add other"]);
+  await writeFile(path.join(repo, "tracked.txt"), "three\n", "utf8");
+  await writeFile(path.join(repo, "other.txt"), "changed other\n", "utf8");
+  const responses = [
+    {
+      choices: [{
+        message: {
+          role: "assistant",
+          tool_calls: [{
+            id: "call_add",
+            type: "function",
+            function: { name: "git_add", arguments: JSON.stringify({ paths: ["other.txt"] }) }
+          }, {
+            id: "call_commit",
+            type: "function",
+            function: { name: "git_commit", arguments: JSON.stringify({ message: "Commit selected file" }) }
+          }, {
+            id: "call_verify",
+            type: "function",
+            function: { name: "final_verify", arguments: "{}" }
+          }]
+        }
+      }]
+    },
+    {
+      choices: [{
+        message: {
+          role: "assistant",
+          content: "committed"
+        }
+      }]
+    }
+  ];
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {
+        baseUrl: "https://example.test/v1",
+        apiKey: "local-test-key",
+        model: "model-a",
+        temperature: 0
+      }
+    },
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => responses.shift() })
+  });
+
+  await runner.run("ai-commit", { paths: ["tracked.txt"], message: "Commit selected file" });
+
+  assert.match(git(repo, ["show", "--name-only", "--pretty=", "HEAD"]).trim(), /^tracked\.txt$/);
+  assert.match(git(repo, ["status", "--short"]), /^ M other\.txt/m);
+});

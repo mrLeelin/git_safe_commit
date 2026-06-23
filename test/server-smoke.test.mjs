@@ -143,6 +143,15 @@ test("server exposes health, config, and inspect action", async () => {
     assert.match(graph.graph.join("\n"), /initial/);
     assert.match(graph.command, /--topo-order/);
 
+    const suggestResponse = await fetch(`${baseUrl}/api/ai/suggest-message`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ paths: ["tracked.txt"] })
+    });
+    const suggestText = await suggestResponse.text();
+    assert.match(suggestResponse.headers.get("content-type") || "", /application\/json/);
+    assert.doesNotThrow(() => JSON.parse(suggestText));
+
     const healthAfterInspect = await fetch(`${baseUrl}/api/health`);
     assert.equal(healthAfterInspect.status, 200);
   } finally {
