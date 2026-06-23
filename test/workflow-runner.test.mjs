@@ -41,6 +41,30 @@ test("workflow runner inspects without AI and emits phase events", async () => {
   assert.deepEqual(events.map((item) => item.event), ["phase", "phase"]);
 });
 
+test("workflow runner commits selected files directly without AI", async () => {
+  const repo = await createRepo();
+  await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
+  let fetchCalled = false;
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    },
+    fetchImpl: async () => {
+      fetchCalled = true;
+      throw new Error("AI should not be called for direct commit");
+    }
+  });
+
+  const result = await runner.run("commit", { paths: ["tracked.txt"], message: "Commit selected file directly" });
+
+  assert.equal(result.ok, true);
+  assert.equal(fetchCalled, false);
+  assert.match(git(repo, ["log", "-1", "--pretty=%s"]).trim(), /^Commit selected file directly$/);
+  assert.match(git(repo, ["show", "--name-only", "--pretty=", "HEAD"]).trim(), /^tracked\.txt$/);
+});
+
 test("workflow runner accepts ai-commit payload and exposes commit tools", async () => {
   const repo = await createRepo();
   await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");

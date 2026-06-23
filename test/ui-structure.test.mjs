@@ -71,6 +71,12 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(app, /activeView === 'workflow'/);
   assert.match(app, /activeView === 'graph'/);
   assert.match(app, /activeView === 'settings'/);
+  assert.match(app, /<section v-show="activeView === 'workflow'" class="view-pane">/);
+  assert.match(app, /<section v-show="activeView === 'graph'" class="view-pane">/);
+  assert.match(app, /<section v-show="activeView === 'settings'" class="view-pane">/);
+  assert.doesNotMatch(app, /<WorkflowView\s+v-if="activeView === 'workflow'"/);
+  assert.doesNotMatch(app, /<GitGraphView\s+v-if="activeView === 'graph'"/);
+  assert.doesNotMatch(app, /<SettingsView\s+v-if="activeView === 'settings'"/);
   assert.match(rail, />提交工作流</);
   assert.match(rail, />git 树</);
   assert.match(rail, />设置</);
@@ -86,6 +92,8 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /emit\("commit"/);
   assert.match(workflowView, /paths: selectedPaths\.value/);
   assert.match(workflowView, /message: commitMessage\.value\.trim\(\)/);
+  assert.match(app, /runAction\("commit", payload\)/);
+  assert.doesNotMatch(app, /runAction\("ai-commit", payload\)/);
   assert.match(workflowView, /commitResetKey/);
   assert.match(app, /commitResetKey\.value \+= 1/);
   assert.match(workflowView, /emit\("push", \{ confirmed: pushConfirmed\.value \}\)/);

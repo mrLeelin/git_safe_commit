@@ -532,7 +532,7 @@ textarea {
 }
 .btn.danger { background: var(--red); }
 .btn:hover:not(:disabled) { filter: brightness(.98); }
-.btn:disabled { opacity: .5; }
+.btn:disabled { opacity: .35; filter: grayscale(.4); }
 .disabled-reason {
   color: var(--muted);
   font-size: 12px;
@@ -924,6 +924,9 @@ textarea {
 }
 .theme-dark .action-card .disabled-reason {
   color: #93a4b7;
+}
+.theme-dark .commit-card .disabled-reason {
+  color: #f59e0b;
 }
 .theme-dark .status-strip .status-card {
   border-color: #26374d;

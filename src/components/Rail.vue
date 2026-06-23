@@ -49,6 +49,9 @@ const emit = defineEmits(["select-view", "toggle-theme", "toggle-rail"]);
       <button type="button" :class="{ active: activeView === 'settings' }" @click="emit('select-view', 'settings')">
         <span>3</span><strong>设置</strong>
       </button>
+      <button type="button" :class="{ active: activeView === 'logs' }" @click="emit('select-view', 'logs')">
+        <span>4</span><strong>日志</strong>
+      </button>
     </nav>
 
     <div class="rail-spacer"></div>

@@ -14,6 +14,7 @@ import Rail from "./components/Rail.vue";
 import GitGraphView from "./views/GitGraphView.vue";
 import SettingsView from "./views/SettingsView.vue";
 import WorkflowView from "./views/WorkflowView.vue";
+import LogsView from "./views/LogsView.vue";
 
 const zh = {
   title: "Git 安全提交",
@@ -201,9 +202,9 @@ async function runAction(action, payload = {}) {
     if (result.status || result.summary) view.result = { status: result.status, summary: result.summary };
     view.details = JSON.stringify(result, null, 2);
     log("操作完成", { action: labelAction(action) });
-    if (action === "inspect" || action === "create-recovery" || action.startsWith("ai-")) {
+    if (action === "inspect" || action === "create-recovery" || action === "commit" || action.startsWith("ai-")) {
       await Promise.all([loadConfigAndState(), loadGraph()]);
-      if (action === "ai-commit") commitResetKey.value += 1;
+      if (action === "commit" || action === "ai-commit") commitResetKey.value += 1;
     }
   } catch (error) {
     view.details = `错误\n${error.message}`;
@@ -226,7 +227,7 @@ function setDetails(message) {
 }
 
 async function runCommit(payload) {
-  await runAction("ai-commit", payload);
+  await runAction("commit", payload);
 }
 
 async function runPush(payload) {
@@ -285,6 +286,7 @@ function labelAction(action) {
   return ({
     inspect: zh.inspectRepo,
     "create-recovery": zh.createRecovery,
+    commit: zh.aiCommit,
     "ai-commit": zh.aiCommit,
     "ai-sync": zh.aiSync,
     "ai-push": zh.aiPush
@@ -314,52 +316,63 @@ function publicPayload(payload) {
     />
 
     <main class="workspace" :class="{ 'settings-workspace': activeView !== 'graph' }">
-      <WorkflowView
-        v-if="activeView === 'workflow'"
-        :labels="zh"
-        :summary="summary"
-        :status="status"
-        :sections="sections"
-        :files="files"
-        :selectable-files="selectableFiles"
-        :conflict-files="conflictFiles"
-        :selected-ai="selectedAi"
-        :config="view.config"
-        :blockers="blockers"
-        :recovery="recovery"
-        :logs="view.logs"
-        :details="view.details"
-        :busy="view.busy"
-        :commit-reset-key="commitResetKey"
-        :readiness="readiness"
-        :next-step="nextStep"
-        :require-confirm-before-push="view.config?.workflow?.requireConfirmBeforePush ?? true"
-        @action="runAction"
-        @commit="runCommit"
-        @push="runPush"
-        @suggest-message="suggestCommitMessage"
-        @blocked="setDetails"
-      />
+      <section v-show="activeView === 'workflow'" class="view-pane">
+        <WorkflowView
+          :labels="zh"
+          :summary="summary"
+          :status="status"
+          :sections="sections"
+          :files="files"
+          :selectable-files="selectableFiles"
+          :conflict-files="conflictFiles"
+          :selected-ai="selectedAi"
+          :config="view.config"
+          :blockers="blockers"
+          :recovery="recovery"
+          :logs="view.logs"
+          :details="view.details"
+          :busy="view.busy"
+          :commit-reset-key="commitResetKey"
+          :readiness="readiness"
+          :next-step="nextStep"
+          :require-confirm-before-push="view.config?.workflow?.requireConfirmBeforePush ?? true"
+          @action="runAction"
+          @commit="runCommit"
+          @push="runPush"
+          @suggest-message="suggestCommitMessage"
+          @blocked="setDetails"
+        />
+      </section>
 
-      <GitGraphView
-        v-if="activeView === 'graph'"
-        :commits="view.commits"
-        :repo-name="repoName"
-        :branch="summary?.branch || 'main'"
-        :graph-error="view.graphError"
-        :labels="zh"
-        @refresh="loadGraph"
-      />
+      <section v-show="activeView === 'graph'" class="view-pane">
+        <GitGraphView
+          :commits="view.commits"
+          :repo-name="repoName"
+          :branch="summary?.branch || 'main'"
+          :graph-error="view.graphError"
+          :labels="zh"
+          @refresh="loadGraph"
+        />
+      </section>
 
-      <SettingsView
-        v-if="activeView === 'settings'"
-        :labels="zh"
-        :config="view.config"
-        :config-state="view.configState"
-        :installed-ai="installedAi"
-        @reload="loadConfigAndState"
-        @save="saveSettings"
-      />
+      <section v-show="activeView === 'settings'" class="view-pane">
+        <SettingsView
+          :labels="zh"
+          :config="view.config"
+          :config-state="view.configState"
+          :installed-ai="installedAi"
+          @reload="loadConfigAndState"
+          @save="saveSettings"
+        />
+      </section>
+
+      <section v-show="activeView === 'logs'" class="view-pane">
+        <LogsView
+          :labels="zh"
+          :logs="view.logs"
+          :details="view.details"
+        />
+      </section>
     </main>
   </div>
 </template>

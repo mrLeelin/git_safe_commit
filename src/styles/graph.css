@@ -2,99 +2,110 @@
   width: 100%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 22px;
+  gap: 16px;
   justify-self: center;
+  min-height: calc(100vh - 44px);
+  padding: 22px;
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow);
 }
 .graph-toolbar {
   display: flex;
   justify-content: space-between;
   gap: 16px;
   align-items: center;
-  padding: 0;
+  padding: 0 2px 14px;
+  border-bottom: 1px solid var(--line);
 }
 .graph-toolbar h3 {
   margin-bottom: 3px;
-  color: #f8fafc;
+  color: var(--ink);
   font-size: 18px;
 }
 .graph-toolbar p {
-  color: #93a4b7;
+  color: var(--muted);
   font-size: 13px;
 }
 .graph-toolbar .btn.secondary {
-  border-color: #43556e;
-  background: #111827;
-  color: #dbe7f4;
+  border-color: var(--line);
+  background: #ffffff;
+  color: var(--ink);
 }
 .git-graph-list {
-  height: min(680px, calc(100vh - 238px));
+  height: min(720px, calc(100vh - 178px));
   min-height: 520px;
-  border: 0;
-  border-radius: 6px;
-  background: #1e1f21;
-  color: #f2f4f7;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
   overflow: hidden;
-  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif;
 }
 .graph-titlebar {
-  height: 28px;
+  height: 34px;
   display: grid;
   grid-template-columns: 160px minmax(0, 1fr) 160px;
   align-items: center;
-  border-bottom: 1px solid #303236;
-  background: #171819;
+  border-bottom: 1px solid var(--line);
+  background: #f8fafc;
 }
 .graph-titlebar strong {
   justify-self: center;
+  color: var(--ink);
   font-size: 13px;
 }
 .graph-refresh {
   justify-self: end;
   margin-right: 8px;
-  min-height: 22px;
-  border: 0;
+  min-height: 24px;
+  border: 1px solid var(--line);
   border-radius: 4px;
   padding: 2px 8px;
-  background: #24262a;
-  color: #d1d5db;
+  background: #ffffff;
+  color: #334155;
   font-size: 12px;
+  font-weight: 800;
 }
 .graph-branchbar {
-  height: 30px;
+  height: 32px;
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr) 240px;
   align-items: center;
-  border-bottom: 1px solid #34363b;
-  background: #1c1d1f;
-  color: #cfd4dc;
+  border-bottom: 1px solid var(--line);
+  background: #f1f5f9;
+  color: #475569;
 }
-.graph-menu { justify-self: center; color: #aab0bb; font-size: 16px; }
-.branch-name { justify-self: center; color: #d7dbff; font-size: 13px; }
+.graph-menu { justify-self: center; color: #64748b; font-size: 16px; }
+.branch-name { justify-self: center; color: #1d4ed8; font-size: 13px; font-weight: 900; }
 .graph-body {
-  height: 461px;
+  height: calc(100% - 66px);
+  min-height: 454px;
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
-  background: #1f2022;
+  background: #ffffff;
 }
 .graph-sidebar {
   display: grid;
   place-items: start center;
   padding-top: 7px;
-  border-right: 1px solid #3a3d42;
-  background: #26282b;
-  color: #e5e7eb;
+  border-right: 1px solid var(--line);
+  background: #f8fafc;
+  color: #64748b;
 }
-.commit-list { max-height: 461px; overflow: auto; }
+.commit-list { max-height: 100%; overflow: auto; }
 .commit-row {
   height: 24px;
   display: grid;
   grid-template-columns: 118px minmax(420px, 1fr) 154px 82px 132px;
   align-items: center;
-  background: #202123;
+  background: #ffffff;
+  color: var(--ink);
   font-size: 12px;
   line-height: 1;
 }
-.commit-row:nth-child(even) { background: #1f2022; }
+.commit-row:nth-child(even) { background: #f8fafc; }
 .commit-row.head { background: #2f73d5; color: #fff; }
 .commit-lanes { position: relative; height: 24px; }
 .mainline {
@@ -136,7 +147,7 @@
   left: 29px;
   width: 7px;
   height: 7px;
-  border: 1px solid #1e1f21;
+  border: 1px solid #ffffff;
   border-radius: 50%;
   background: #f0a000;
   box-shadow: 0 0 0 1px #f0a000;
@@ -160,6 +171,7 @@
   text-overflow: ellipsis;
 }
 .subject { overflow: hidden; text-overflow: ellipsis; font-weight: 700; color: #fff; }
+.commit-row:not(.head) .subject { color: var(--ink); }
 .branch {
   display: inline-flex;
   align-items: center;
@@ -186,7 +198,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   padding-right: 8px;
-  color: #f1f5f9;
+  color: #334155;
   font-weight: 700;
 }
 .avatar {
@@ -202,19 +214,93 @@
   flex: 0 0 auto;
 }
 .commit-hash, .commit-date {
-  color: #f8fafc;
+  color: #475569;
   white-space: nowrap;
   font-size: 12px;
   font-weight: 700;
 }
-.theme-light .graph-toolbar h3 {
-  color: #0f172a;
+.commit-row.head .commit-author,
+.commit-row.head .commit-hash,
+.commit-row.head .commit-date {
+  color: #ffffff;
 }
-.theme-light .graph-toolbar p {
-  color: #64748b;
+
+.theme-dark .graph-page {
+  background: #111c2c;
+  color: #e5edf7;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .28);
 }
-.theme-light .graph-toolbar .btn.secondary {
-  border-color: #cbd5e1;
-  background: #ffffff;
-  color: #0f172a;
+.theme-dark .graph-toolbar {
+  border-bottom-color: #26374d;
+}
+.theme-dark .graph-toolbar h3 {
+  color: #f8fafc;
+}
+.theme-dark .graph-toolbar p {
+  color: #93a4b7;
+}
+.theme-dark .graph-toolbar .btn.secondary {
+  border-color: #43556e;
+  background: #111827;
+  color: #dbe7f4;
+}
+.theme-dark .git-graph-list {
+  border-color: #26374d;
+  background: #0d1625;
+  color: #e5edf7;
+}
+.theme-dark .graph-titlebar {
+  border-bottom-color: #26374d;
+  background: #172233;
+}
+.theme-dark .graph-titlebar strong {
+  color: #f8fafc;
+}
+.theme-dark .graph-refresh {
+  border-color: #43556e;
+  background: #1d293b;
+  color: #dbe7f4;
+}
+.theme-dark .graph-branchbar {
+  border-bottom-color: #26374d;
+  background: #111827;
+  color: #93a4b7;
+}
+.theme-dark .graph-menu {
+  color: #93a4b7;
+}
+.theme-dark .branch-name {
+  color: #67e8f9;
+}
+.theme-dark .graph-body {
+  background: #0d1625;
+}
+.theme-dark .graph-sidebar {
+  border-right-color: #26374d;
+  background: #111827;
+  color: #93a4b7;
+}
+.theme-dark .commit-row {
+  background: #0d1625;
+  color: #e5edf7;
+}
+.theme-dark .commit-row:nth-child(even) {
+  background: #111c2c;
+}
+.theme-dark .commit-row.head {
+  background: #2f73d5;
+  color: #ffffff;
+}
+.theme-dark .node {
+  border-color: #0d1625;
+}
+.theme-dark .commit-row:not(.head) .subject {
+  color: #f8fafc;
+}
+.theme-dark .commit-author {
+  color: #dbe7f4;
+}
+.theme-dark .commit-hash,
+.theme-dark .commit-date {
+  color: #cbd5e1;
 }

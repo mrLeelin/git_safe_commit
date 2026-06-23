@@ -13,8 +13,6 @@ const props = defineProps({
   config: { type: Object, default: null },
   blockers: { type: Array, default: () => [] },
   recovery: { type: Object, default: null },
-  logs: { type: Array, default: () => [] },
-  details: { type: String, default: "" },
   busy: { type: String, default: "" },
   commitResetKey: { type: Number, default: 0 },
   readiness: { type: Object, required: true },
@@ -37,7 +35,6 @@ const canPush = computed(() => !pushBlockReason.value && !props.busy);
 
 const commitBlockReason = computed(() => {
   if (!props.config?.repoPath) return "缺少仓库路径";
-  if (!props.selectedAi) return "未选择可用 AI";
   if (!props.summary) return "先检查仓库";
   if (props.blockers.length) return "存在阻断项";
   if (!selectedPaths.value.length) return "先选择文件";
@@ -47,7 +44,6 @@ const commitBlockReason = computed(() => {
 
 const pushBlockReason = computed(() => {
   if (!props.config?.repoPath) return "缺少仓库路径";
-  if (!props.selectedAi) return "未选择可用 AI";
   if (!props.summary) return "先检查仓库";
   if (props.blockers.length) return "存在阻断项";
   if (props.requireConfirmBeforePush && !pushConfirmed.value) return "需要推送确认";
@@ -85,6 +81,7 @@ function clearSelection() {
 
 function runCommit() {
   if (commitBlockReason.value) {
+    alert(commitBlockReason.value);
     emit("blocked", commitBlockReason.value);
     return;
   }
@@ -93,6 +90,7 @@ function runCommit() {
 
 function runPush() {
   if (pushBlockReason.value) {
+    alert(pushBlockReason.value);
     emit("blocked", pushBlockReason.value);
     return;
   }
@@ -220,20 +218,5 @@ async function suggestMessage() {
       </div>
       <div v-else class="empty-state">{{ labels.fileHint }}</div>
     </div>
-  </section>
-
-  <section class="panel">
-    <h3>{{ labels.eventLog }}</h3>
-    <ol class="logs">
-      <li v-for="entry in logs" :key="entry.time + entry.event">
-        <time>{{ new Date(entry.time).toLocaleTimeString() }}</time>
-        <code>{{ entry.event }}: {{ JSON.stringify(entry.data) }}</code>
-      </li>
-    </ol>
-  </section>
-
-  <section class="panel output-panel">
-    <h3>{{ labels.output }}</h3>
-    <pre class="output">{{ details }}</pre>
   </section>
 </template>
