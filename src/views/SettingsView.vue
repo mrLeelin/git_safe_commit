@@ -13,7 +13,7 @@ const props = defineProps({
   installedAi: { type: Array, default: () => [] }
 });
 
-const emit = defineEmits(["reload", "save"]);
+const emit = defineEmits(["reload", "save", "choose-repo-folder", "switch-repo"]);
 
 const activeSettingsTab = ref("general");
 const form = reactive(createDefaultSettingsForm());
@@ -31,6 +31,17 @@ watch(() => props.config, (config) => {
 
 function saveSettings() {
   emit("save", buildSettingsPayload(form));
+}
+
+function chooseRepoFolder() {
+  emit("choose-repo-folder", (path) => {
+    if (path) form.repoPath = path;
+  });
+}
+
+function switchRepo(repo) {
+  form.repoPath = repo;
+  emit("switch-repo", buildSettingsPayload(form));
 }
 </script>
 
@@ -73,7 +84,30 @@ function saveSettings() {
           <input v-model="form.requireConfirmBeforePush" type="checkbox">
         </label>
 
-        <label v-if="activeSettingsTab === 'general' || activeSettingsTab === 'repo'" class="wide"><span>{{ labels.repoPath }}</span><input v-model="form.repoPath" autocomplete="off"></label>
+        <label v-if="activeSettingsTab === 'general' || activeSettingsTab === 'repo'" class="repo-path-picker wide">
+          <span>{{ labels.repoPath }}</span>
+          <span class="repo-path-control">
+            <input v-model="form.repoPath" autocomplete="off">
+            <button class="btn secondary" type="button" @click="chooseRepoFolder">{{ labels.chooseFolder }}</button>
+          </span>
+        </label>
+
+        <div v-if="(activeSettingsTab === 'general' || activeSettingsTab === 'repo') && form.repositories.length" class="repo-history wide">
+          <strong>{{ labels.savedRepositories }}</strong>
+          <div class="repo-history-list">
+            <button
+              v-for="repo in form.repositories"
+              :key="repo"
+              type="button"
+              class="repo-history-item"
+              :class="{ active: repo === form.repoPath }"
+              @click="switchRepo(repo)"
+            >
+              <span>{{ repo.split(/[\\/]/).filter(Boolean).at(-1) || repo }}</span>
+              <small>{{ repo }}</small>
+            </button>
+          </div>
+        </div>
 
         <div v-if="activeSettingsTab === 'general' || activeSettingsTab === 'ai'" class="settings-section wide">
           <strong>AI 服务设置</strong>

@@ -28,8 +28,24 @@ export async function saveSettings(config) {
   return request("/api/config", { method: "POST", body: JSON.stringify({ config }) });
 }
 
+export async function chooseRepoFolder() {
+  return request("/api/system/pick-folder", { method: "POST" });
+}
+
 export async function suggestMessage(payload = {}) {
   return request("/api/ai/suggest-message", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function loadTextConflict(payload = {}) {
+  return request("/api/conflict/text/load", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function writeTextCandidate(payload = {}) {
+  return request("/api/conflict/text/candidate", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function exportBinaryConflict(payload = {}) {
+  return request("/api/conflict/binary/export", { method: "POST", body: JSON.stringify(payload) });
 }
 
 export function openEvents({ onOpen, onError, onState, onLog, onPhase } = {}) {

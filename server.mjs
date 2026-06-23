@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { detectInstalledAi } from "./lib/ai-installations.mjs";
 import { suggestCommitMessage } from "./lib/commit-message-suggester.mjs";
 import { defaultConfigPath, loadConfig, maskConfig, saveConfig } from "./lib/config.mjs";
+import { exportBinaryConflict, loadTextConflict, writeTextCandidate } from "./lib/conflict-workbench.mjs";
+import { pickFolder } from "./lib/folder-picker.mjs";
 import { getGitGraph, getCommitDetail } from "./lib/git-graph.mjs";
 import { createWorkflowRunner } from "./lib/workflow-runner.mjs";
 
@@ -52,6 +54,16 @@ app.get("/api/state", (_req, res) => {
   res.json({ ok: true, state: runner.state, logs: sessionLogs.slice(-200) });
 });
 
+app.post("/api/system/pick-folder", async (_req, res, next) => {
+  try {
+    const result = await pickFolder();
+    appendLog("folder-picked", { cancelled: result.cancelled, path: result.path || "" });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/git/graph", async (_req, res, next) => {
   try {
     const graph = await getGitGraph(config.repoPath);
@@ -88,6 +100,42 @@ app.post("/api/ai/suggest-message", async (req, res, next) => {
     const { message } = await suggestCommitMessage({ config, paths });
     appendLog("ai-suggest-message", { paths, messageLength: message.length });
     res.json({ ok: true, message });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/conflict/text/load", async (req, res, next) => {
+  try {
+    const result = await loadTextConflict({ repoPath: config.repoPath, filePath: req.body.path });
+    appendLog("text-conflict-load", { path: req.body.path });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/conflict/text/candidate", async (req, res, next) => {
+  try {
+    const result = await writeTextCandidate({
+      repoPath: config.repoPath,
+      filePath: req.body.path,
+      content: req.body.content,
+      source: req.body.source,
+      lineChoices: req.body.lineChoices
+    });
+    appendLog("text-conflict-candidate", { path: req.body.path, candidate: result.textCandidate?.candidate });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/conflict/binary/export", async (req, res, next) => {
+  try {
+    const result = await exportBinaryConflict({ repoPath: config.repoPath, filePath: req.body.path });
+    appendLog("binary-conflict-export", { path: req.body.path, ours: result.binaryConflict?.ours, theirs: result.binaryConflict?.theirs });
+    res.json(result);
   } catch (error) {
     next(error);
   }

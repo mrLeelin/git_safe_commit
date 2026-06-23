@@ -18,8 +18,20 @@ test("settings form fills selected AI from saved config", () => {
   });
 
   assert.equal(form.repoPath, "C:/repo");
+  assert.deepEqual(form.repositories, ["C:/repo"]);
   assert.equal(form.selectedAi, "claude");
   assert.equal(form.requireConfirmBeforePush, false);
+});
+
+test("settings form exposes saved repositories for quick switching", () => {
+  const form = createDefaultSettingsForm();
+
+  fillSettingsFormFromConfig(form, {
+    repoPath: "C:/active",
+    repositories: ["C:/old", "C:/active", "C:/old"]
+  });
+
+  assert.deepEqual(form.repositories, ["C:/active", "C:/old"]);
 });
 
 test("settings form maps legacy active provider into selected AI", () => {
@@ -45,6 +57,7 @@ test("settings payload only saves selected AI and workflow fields", () => {
 
   assert.deepEqual(payload, {
     repoPath: "C:/repo",
+    repositories: ["C:/repo"],
     ai: {
       selected: "claude",
       activeProvider: "claude"

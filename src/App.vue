@@ -1,14 +1,18 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
 import {
+  chooseRepoFolder as chooseRepoFolderApi,
   loadAiInstallations,
   loadConfig,
   loadGraph as loadGraphApi,
   loadState,
   openEvents as openEventStream,
+  exportBinaryConflict as exportBinaryConflictApi,
+  loadTextConflict as loadTextConflictApi,
   runAction as runActionApi,
   saveSettings as saveSettingsApi,
-  suggestMessage as suggestMessageApi
+  suggestMessage as suggestMessageApi,
+  writeTextCandidate as writeTextCandidateApi
 } from "./client/api.js";
 import Rail from "./components/Rail.vue";
 import GitGraphView from "./views/GitGraphView.vue";
@@ -44,6 +48,10 @@ const zh = {
   commitMessagePlaceholder: "用一句话说明这次提交为什么存在",
   selectableFiles: "可提交文件",
   conflictFiles: "冲突文件",
+  conflictWorkbench: "冲突工作台",
+  openTextWorkbench: "打开文本工作台",
+  exportBinaryConflict: "导出二进制版本",
+  writeConflictCandidate: "生成候选文件",
   safety: "安全状态",
   blockers: "阻断项",
   noBlockers: "当前没有阻断项。",
@@ -67,6 +75,8 @@ const zh = {
   eventLog: "事件日志",
   saveLocal: "保存到本地 config.json。读取配置时 API Key 会被脱敏。",
   repoPath: "仓库路径",
+  chooseFolder: "选择文件夹",
+  savedRepositories: "已记录仓库",
   aiBase: "AI 地址",
   model: "模型",
   temp: "温度",
@@ -202,7 +212,7 @@ async function runAction(action, payload = {}) {
     if (result.status || result.summary) view.result = { status: result.status, summary: result.summary };
     view.details = JSON.stringify(result, null, 2);
     log("操作完成", { action: labelAction(action) });
-    if (action === "inspect" || action === "create-recovery" || action === "fetch" || action === "commit" || action.startsWith("ai-")) {
+    if (action === "inspect" || action === "create-recovery" || action === "fetch" || action === "resolve-conflict" || action === "commit" || action.startsWith("ai-")) {
       await Promise.all([loadConfigAndState(), loadGraph()]);
       if (action === "commit" || action === "ai-commit") commitResetKey.value += 1;
     }
@@ -244,6 +254,33 @@ async function suggestCommitMessage(paths, done) {
   }
 }
 
+async function loadTextConflict(payload, done) {
+  try {
+    done(await loadTextConflictApi(payload));
+  } catch (error) {
+    view.details = `加载文本冲突失败: ${error.message}`;
+    done({ ok: false, error: error.message });
+  }
+}
+
+async function writeTextCandidate(payload, done) {
+  try {
+    done(await writeTextCandidateApi(payload));
+  } catch (error) {
+    view.details = `生成文本候选失败: ${error.message}`;
+    done({ ok: false, error: error.message });
+  }
+}
+
+async function exportBinaryConflict(payload, done) {
+  try {
+    done(await exportBinaryConflictApi(payload));
+  } catch (error) {
+    view.details = `导出二进制冲突失败: ${error.message}`;
+    done({ ok: false, error: error.message });
+  }
+}
+
 async function saveSettings(payload) {
   view.configState = "正在保存";
   try {
@@ -254,6 +291,28 @@ async function saveSettings(payload) {
     await loadGraph();
   } catch (error) {
     view.configState = error.message;
+  }
+}
+
+async function switchRepo(payload) {
+  await saveSettings(payload);
+  if (view.config?.repoPath) await runAction("inspect");
+}
+
+async function chooseRepoFolder(done) {
+  view.configState = "正在选择文件夹";
+  try {
+    const result = await chooseRepoFolderApi();
+    if (result.cancelled) {
+      view.configState = "已取消选择";
+      done?.("");
+      return;
+    }
+    done?.(result.path || "");
+    view.configState = "已选择，记得保存";
+  } catch (error) {
+    view.configState = error.message;
+    done?.("");
   }
 }
 
@@ -287,6 +346,7 @@ function labelAction(action) {
     inspect: zh.inspectRepo,
     "create-recovery": zh.createRecovery,
     fetch: zh.fetchRemote,
+    "resolve-conflict": zh.conflictFiles,
     commit: zh.aiCommit,
     "ai-commit": zh.aiCommit,
     "ai-sync": zh.aiSync,
@@ -339,6 +399,9 @@ function publicPayload(payload) {
           @action="runAction"
           @commit="runCommit"
           @push="runPush"
+          @load-text-conflict="loadTextConflict"
+          @write-text-candidate="writeTextCandidate"
+          @export-binary-conflict="exportBinaryConflict"
           @suggest-message="suggestCommitMessage"
           @blocked="setDetails"
         />
@@ -363,6 +426,8 @@ function publicPayload(payload) {
           :installed-ai="installedAi"
           @reload="loadConfigAndState"
           @save="saveSettings"
+          @choose-repo-folder="chooseRepoFolder"
+          @switch-repo="switchRepo"
         />
       </section>
 

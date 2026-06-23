@@ -31,7 +31,29 @@ test("loadConfig applies defaults and preserves explicit values", async () => {
   assert.equal(config.ai.providers.codex.baseUrl, "https://example.test/v1");
   assert.equal(config.ai.providers.codex.apiKey, "local-test-secret");
   assert.equal(config.ai.providers.claude.model, "claude-sonnet-4-5");
+  assert.deepEqual(config.repositories, [path.resolve(dir)]);
   assert.equal(config.workflow.requireConfirmBeforePush, true);
+});
+
+test("saveConfig records unique repositories with the active repo first", async () => {
+  const firstRepo = await mkdtemp(path.join(os.tmpdir(), "gsc-repo-first-"));
+  const secondRepo = await mkdtemp(path.join(os.tmpdir(), "gsc-repo-second-"));
+  const configDir = await mkdtemp(path.join(os.tmpdir(), "gsc-config-repos-"));
+  const configPath = path.join(configDir, "config.json");
+  await writeFile(configPath, JSON.stringify({
+    repoPath: firstRepo,
+    repositories: [firstRepo]
+  }), "utf8");
+
+  const saved = await saveConfig({
+    repoPath: secondRepo,
+    repositories: [firstRepo]
+  }, configPath);
+
+  assert.deepEqual(saved.repositories, [path.resolve(secondRepo), path.resolve(firstRepo)]);
+
+  const raw = JSON.parse(await readFile(configPath, "utf8"));
+  assert.deepEqual(raw.repositories, [path.resolve(secondRepo), path.resolve(firstRepo)]);
 });
 
 test("maskConfig never exposes apiKey", () => {

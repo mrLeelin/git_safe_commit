@@ -1,5 +1,11 @@
 <script setup>
 import { computed, ref, watch } from "vue";
+import {
+  buildLineMergeRows,
+  composeLineDraft,
+  isMergeChoice,
+  lineChoiceSummary
+} from "../conflict-merge-model.js";
 
 const props = defineProps({
   labels: { type: Object, required: true },
@@ -19,7 +25,7 @@ const props = defineProps({
   nextStep: { type: String, default: "" }
 });
 
-const emit = defineEmits(["action", "commit", "push", "suggest-message", "blocked"]);
+const emit = defineEmits(["action", "commit", "push", "load-text-conflict", "write-text-candidate", "export-binary-conflict", "suggest-message", "blocked"]);
 
 const selectedPaths = ref([]);
 const commitMessage = ref("");
@@ -27,6 +33,13 @@ const suggestingMessage = ref(false);
 const selectionQuery = ref("");
 const lastSelectedPath = ref("");
 const confirmAction = ref(null);
+const activeConflictPath = ref("");
+const textConflict = ref(null);
+const textCandidate = ref("");
+const textDraftSource = ref("current");
+const textLineRows = ref([]);
+const workbenchMessage = ref("");
+const workbenchActive = computed(() => Boolean(activeConflictPath.value));
 
 const selectedFileCount = computed(() => selectedPaths.value.length);
 const selectedFilesLabel = computed(() => `${selectedFileCount.value} / ${props.selectableFiles.length}`);
@@ -187,6 +200,115 @@ function cancelConfirm() {
   confirmAction.value = null;
 }
 
+function closeWorkbench() {
+  activeConflictPath.value = "";
+  textConflict.value = null;
+  textCandidate.value = "";
+  textDraftSource.value = "current";
+  textLineRows.value = [];
+  workbenchMessage.value = "";
+}
+
+function isTextConflict(file) {
+  return /\.(cs|asmdef|asmref|js|ts|tsx|mjs|cjs|py|ps1|sh|bat|cmd|java|kt|cpp|h|hpp|c|go|rs|md|txt|json|jsonc|xml|ya?ml|toml|ini|editorconfig|gitignore|gitattributes|shader|hlsl|cginc|compute|uss|uxml)$/i.test(file.path);
+}
+
+async function openTextWorkbench(path) {
+  activeConflictPath.value = path;
+  workbenchMessage.value = "正在加载文本冲突...";
+  const result = await new Promise((resolve) => {
+    emit("load-text-conflict", { path }, resolve);
+  });
+  if (!result.ok) {
+    workbenchMessage.value = result.error || "加载失败";
+    return;
+  }
+  textConflict.value = result.textConflict;
+  textLineRows.value = buildLineMergeRows(
+    result.textConflict.ours?.content || "",
+    result.textConflict.theirs?.content || ""
+  );
+  textDraftSource.value = "line";
+  textCandidate.value = composeLineDraft(textLineRows.value);
+  workbenchMessage.value = "文本冲突已加载。上方编辑候选内容，或在按行对比中选择 OURS / THEIRS / BOTH / NONE；只会生成候选文件。";
+}
+
+async function saveTextCandidate() {
+  if (!textConflict.value) return;
+  const result = await new Promise((resolve) => {
+    emit("write-text-candidate", {
+      path: textConflict.value.path,
+      content: textCandidate.value,
+      source: textDraftSource.value,
+      lineChoices: lineChoiceSummary(textLineRows.value)
+    }, resolve);
+  });
+  workbenchMessage.value = result.ok
+    ? `候选文件已生成：${result.textCandidate.candidate}`
+    : (result.error || "生成候选失败");
+}
+
+function setDraftFromSource(source) {
+  if (!textConflict.value) return;
+  textDraftSource.value = source;
+  textCandidate.value = textConflict.value[source]?.content || "";
+}
+
+function setLineChoice(rowId, choice) {
+  if (!isMergeChoice(choice)) return;
+  const row = textLineRows.value.find((item) => item.id === Number(rowId));
+  if (!row || row.kind !== "changed") return;
+  row.choice = choice;
+  textDraftSource.value = "line";
+  textCandidate.value = composeLineDraft(textLineRows.value);
+}
+
+function setAllLineChoices(choice) {
+  if (!isMergeChoice(choice)) return;
+  for (const row of textLineRows.value) {
+    if (row.kind === "changed") row.choice = choice;
+  }
+  textDraftSource.value = "line";
+  textCandidate.value = composeLineDraft(textLineRows.value);
+}
+
+function sourceContent(source) {
+  return textConflict.value?.[source]?.content || "";
+}
+
+function sourceDescription(source) {
+  return {
+    current: "Git 写在工作区的冲突文件，通常包含冲突标记。",
+    base: "共同祖先，用来判断两边分别改了什么。",
+    ours: "当前分支版本。",
+    theirs: "合入分支版本。"
+  }[source] || "";
+}
+
+function sourceLabel(source) {
+  return {
+    current: "CURRENT",
+    base: "BASE",
+    ours: "OURS",
+    theirs: "THEIRS",
+    line: "按行选择",
+    edited: "手动编辑"
+  }[source] || source;
+}
+
+async function exportBinary(path) {
+  activeConflictPath.value = path;
+  textConflict.value = null;
+  textCandidate.value = "";
+  workbenchMessage.value = "正在导出二进制冲突两边版本...";
+  const result = await new Promise((resolve) => {
+    emit("export-binary-conflict", { path }, resolve);
+  });
+  workbenchMessage.value = result.ok
+    ? `已导出 OURS: ${result.binaryConflict.ours}\nTHEIRS: ${result.binaryConflict.theirs}`
+    : (result.error || "导出失败");
+}
+
 async function suggestMessage() {
   if (!selectedPaths.value.length) return;
   await ensureCommitMessage({ force: true });
@@ -209,6 +331,7 @@ async function ensureCommitMessage({ force = false } = {}) {
 </script>
 
 <template>
+  <template v-if="!workbenchActive">
   <header class="topbar settings-topbar">
     <div>
       <p class="eyebrow">{{ labels.workflow }}</p>
@@ -285,11 +408,6 @@ async function ensureCommitMessage({ force = false } = {}) {
         <div v-if="!selectableFiles.length" class="empty-state">{{ labels.fileHint }}</div>
       </div>
 
-      <div v-if="conflictFiles.length" class="conflict-box">
-        <strong>{{ labels.conflictFiles }}</strong>
-        <code v-for="file in conflictFiles" :key="file.path">{{ file.path }}</code>
-      </div>
-
       <div class="commit-actions">
         <button class="btn secondary suggest" type="button" :disabled="suggestingMessage || !selectedPaths.length" @click="suggestMessage">{{ suggestingMessage ? '生成中...' : 'AI 生成说明' }}</button>
         <button class="btn" type="button" :disabled="!canCommit" @click="runCommit">{{ labels.aiCommit }}</button>
@@ -309,6 +427,18 @@ async function ensureCommitMessage({ force = false } = {}) {
         <button class="btn danger" type="button" :disabled="!canPush" @click="runPush">{{ labels.aiPush }}</button>
         <span class="disabled-reason">{{ pushBlockReason || "推送门禁已满足" }}</span>
       </div>
+
+      <div v-if="conflictFiles.length" class="conflict-box">
+        <strong>{{ labels.conflictWorkbench }}</strong>
+        <div v-for="file in conflictFiles" :key="file.path" class="conflict-row">
+          <code>{{ file.path }}</code>
+          <div class="conflict-actions">
+            <button v-if="isTextConflict(file)" class="text-button" type="button" :disabled="Boolean(busy)" @click="openTextWorkbench(file.path)">{{ labels.openTextWorkbench }}</button>
+            <button v-else class="text-button" type="button" :disabled="Boolean(busy)" @click="exportBinary(file.path)">{{ labels.exportBinaryConflict }}</button>
+          </div>
+        </div>
+      </div>
+
       <div class="safety-box" :class="{ bad: blockers.length }">
         <strong>{{ labels.blockers }}</strong>
         <pre>{{ blockers.length ? blockers.join("\n") : labels.noBlockers }}</pre>
@@ -335,6 +465,115 @@ async function ensureCommitMessage({ force = false } = {}) {
       <div v-else class="empty-state">{{ labels.fileHint }}</div>
     </div>
   </section>
+  </template>
+
+  <template v-if="workbenchActive">
+  <header class="topbar settings-topbar">
+    <div>
+      <p class="eyebrow">{{ labels.conflictWorkbench }}</p>
+      <h2>{{ activeConflictPath }}</h2>
+    </div>
+    <div class="command-bar">
+      <button class="mini-command" type="button" @click="closeWorkbench">返回</button>
+    </div>
+  </header>
+
+  <section v-if="conflictFiles.length" class="conflict-workbench-shell">
+    <div v-if="textConflict" class="text-conflict-workbench">
+      <div class="settings-card-head">
+        <div>
+          <h3>文本冲突工作台</h3>
+          <p>候选文件只写入 .git/git-safe-commit-backups，不覆盖原冲突文件，不执行 git add。</p>
+        </div>
+      </div>
+      <div class="workbench-body">
+        <div class="text-candidate">
+          <div class="text-pane-head">
+            <div>
+              <strong>候选合并内容</strong>
+              <span>{{ textConflict.path }}</span>
+            </div>
+            <span class="source-pill">{{ sourceLabel(textDraftSource) }}</span>
+          </div>
+          <textarea v-model="textCandidate" spellcheck="false" rows="18" @input="textDraftSource = 'edited'"></textarea>
+        </div>
+
+        <div class="text-relation">
+          <strong>对比关系</strong>
+          <span>BASE -> OURS：当前分支做了什么。</span>
+          <span>BASE -> THEIRS：合入分支做了什么。</span>
+          <span>CURRENT：Git 留在工作区的冲突标记文件。</span>
+          <span>候选内容：确认后由 Codex 或用户复制回原路径再验证。</span>
+        </div>
+
+        <div class="text-line-merge">
+          <div class="text-line-toolbar">
+            <div>
+              <strong>按行对比：OURS -> THEIRS</strong>
+              <span>{{ textLineRows.length }} 行；冲突行可以逐行选择。</span>
+            </div>
+            <div class="toolbar">
+              <button class="mini-btn text-choice-btn ours" type="button" @click="setAllLineChoices('ours')">全部 OURS</button>
+              <button class="mini-btn text-choice-btn theirs" type="button" @click="setAllLineChoices('theirs')">全部 THEIRS</button>
+              <button class="mini-btn" type="button" @click="setAllLineChoices('both')">全部 BOTH</button>
+              <button class="mini-btn" type="button" @click="setAllLineChoices('none')">全部 NONE</button>
+              <button class="mini-btn" type="button" @click="setDraftFromSource('current')">重置 CURRENT</button>
+            </div>
+          </div>
+          <div class="text-line-table-wrap">
+            <table class="text-line-table">
+              <thead>
+                <tr>
+                  <th>O</th>
+                  <th>OURS</th>
+                  <th>T</th>
+                  <th>THEIRS</th>
+                  <th>选择</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in textLineRows" :key="row.id" :class="row.kind === 'changed' ? 'line-changed' : 'line-same'">
+                  <td class="line-number">{{ row.oursLineNumber }}</td>
+                  <td :class="{ 'line-ours-cell': row.kind === 'changed' }"><pre class="line-cell">{{ row.ours }}</pre></td>
+                  <td class="line-number">{{ row.theirsLineNumber }}</td>
+                  <td :class="{ 'line-theirs-cell': row.kind === 'changed' }"><pre class="line-cell">{{ row.theirs }}</pre></td>
+                  <td class="line-choice">
+                    <template v-if="row.kind === 'changed'">
+                      <span class="text-conflict-label">冲突</span>
+                      <button class="mini-btn text-choice-btn ours" :class="{ active: row.choice === 'ours' }" type="button" @click="setLineChoice(row.id, 'ours')">OURS</button>
+                      <button class="mini-btn text-choice-btn theirs" :class="{ active: row.choice === 'theirs' }" type="button" @click="setLineChoice(row.id, 'theirs')">THEIRS</button>
+                      <button class="mini-btn" :class="{ active: row.choice === 'both' }" type="button" @click="setLineChoice(row.id, 'both')">BOTH</button>
+                      <button class="mini-btn" :class="{ active: row.choice === 'none' }" type="button" @click="setLineChoice(row.id, 'none')">NONE</button>
+                    </template>
+                    <span v-else class="muted">same</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="text-grid">
+          <div v-for="source in ['current', 'base', 'ours', 'theirs']" :key="source" class="text-pane" :class="{ active: textDraftSource === source }">
+            <div class="text-pane-head">
+              <div>
+                <strong>{{ sourceLabel(source) }}</strong>
+                <span>{{ sourceDescription(source) }}</span>
+              </div>
+              <button class="mini-btn" :class="{ active: textDraftSource === source }" type="button" @click="setDraftFromSource(source)">整份采用</button>
+            </div>
+            <pre class="text-source">{{ sourceContent(source) }}</pre>
+          </div>
+        </div>
+
+        <div class="workbench-actions">
+          <button class="btn" type="button" @click="saveTextCandidate">{{ labels.writeConflictCandidate }}</button>
+          <pre v-if="workbenchMessage" class="workbench-message">{{ workbenchMessage }}</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+  </template>
 
   <Teleport to="body">
     <div v-if="confirmAction" class="confirm-overlay" @click.self="cancelConfirm">
