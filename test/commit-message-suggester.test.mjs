@@ -32,6 +32,13 @@ test("suggestCommitMessage uses the selected installed AI CLI instead of remote 
   assert.equal(commands[0].file, "codex");
   assert.deepEqual(commands[0].args, ["--ask-for-approval", "never", "exec", "--sandbox", "read-only", "-"]);
   assert.match(commands[0].options.input, /diff --git/);
+  assert.match(commands[0].options.input, /只分析这些已选择文件的 diff/);
+  assert.match(commands[0].options.input, /先在内部完成分析/);
+  assert.match(commands[0].options.input, /不要输出分析过程/);
+  assert.match(commands[0].options.input, /按提交目的归并/);
+  assert.match(commands[0].options.input, /不要按文件逐条罗列/);
+  assert.match(commands[0].options.input, /优先说明用户可感知的行为变化/);
+  assert.match(commands[0].options.input, /无法从 diff 判断目的时/);
   assert.match(commands[0].options.input, /\[FixBug\]/);
   assert.match(commands[0].options.input, /\[Feature\]/);
   assert.match(commands[0].options.input, /\[Assets\]/);
@@ -139,4 +146,33 @@ test("suggestCommitMessage accepts stdout when Codex produces a message before t
   });
 
   assert.equal(result.message, "修复 AI 提交说明生成");
+});
+
+test("suggestCommitMessage preserves tagged multiline commit messages from noisy AI output", async () => {
+  const result = await suggestCommitMessage({
+    config: { repoPath: "C:\\repo", ai: { selected: "codex" } },
+    paths: ["src/App.vue"],
+    detectInstalledAi: () => [{
+      id: "codex",
+      label: "Codex",
+      command: "codex",
+      source: "codex"
+    }],
+    runGit: async (_repoPath, args) => {
+      if (args[0] === "diff" && args[1] === "--cached") return { stdout: "" };
+      if (args[0] === "diff") return { stdout: "diff --git a/src/App.vue b/src/App.vue\n-同步远端\n+拉取远端\n" };
+      throw new Error(`unexpected git args: ${args.join(" ")}`);
+    },
+    runProcess: async () => ({
+      ok: true,
+      stdout: [
+        "我会根据 diff 生成提交说明：",
+        "[Style] -- 更新推送拉取按钮标签文案",
+        "        -- 调整操作区按钮显示名称"
+      ].join("\n"),
+      stderr: ""
+    })
+  });
+
+  assert.equal(result.message, "[Style] -- 更新推送拉取按钮标签文案\n        -- 调整操作区按钮显示名称");
 });

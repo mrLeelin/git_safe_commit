@@ -47,10 +47,9 @@ const zh = {
   safety: "安全状态",
   blockers: "阻断项",
   noBlockers: "当前没有阻断项。",
-  next: "下一步",
+  next: "推送和拉取",
   recoveryPoint: "恢复点",
   noRecovery: "本轮还没有恢复点。",
-  pushConfirm: "我确认这次推送只包含当前分支上已经完成的提交",
   graph: "Git 提交树",
   refresh: "刷新",
   noGraph: "暂无提交图。",
@@ -337,7 +336,6 @@ function publicPayload(payload) {
           :commit-reset-key="commitResetKey"
           :readiness="readiness"
           :next-step="nextStep"
-          :require-confirm-before-push="view.config?.workflow?.requireConfirmBeforePush ?? true"
           @action="runAction"
           @commit="runCommit"
           @push="runPush"

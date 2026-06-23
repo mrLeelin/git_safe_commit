@@ -16,18 +16,17 @@ const props = defineProps({
   busy: { type: String, default: "" },
   commitResetKey: { type: Number, default: 0 },
   readiness: { type: Object, required: true },
-  nextStep: { type: String, default: "" },
-  requireConfirmBeforePush: { type: Boolean, default: true }
+  nextStep: { type: String, default: "" }
 });
 
 const emit = defineEmits(["action", "commit", "push", "suggest-message", "blocked"]);
 
 const selectedPaths = ref([]);
 const commitMessage = ref("");
-const pushConfirmed = ref(false);
 const suggestingMessage = ref(false);
 const selectionQuery = ref("");
 const lastSelectedPath = ref("");
+const confirmAction = ref(null);
 
 const selectedFileCount = computed(() => selectedPaths.value.length);
 const selectedFilesLabel = computed(() => `${selectedFileCount.value} / ${props.selectableFiles.length}`);
@@ -64,7 +63,6 @@ const pushBlockReason = computed(() => {
   if (!props.config?.repoPath) return "缺少仓库路径";
   if (!props.summary) return "先检查仓库";
   if (props.blockers.length) return "存在阻断项";
-  if (props.requireConfirmBeforePush && !pushConfirmed.value) return "需要推送确认";
   return "";
 });
 
@@ -168,7 +166,25 @@ function runPush() {
     emit("blocked", pushBlockReason.value);
     return;
   }
-  emit("push", { confirmed: pushConfirmed.value });
+  confirmAction.value = "push";
+}
+
+function runSync() {
+  confirmAction.value = "sync";
+}
+
+function confirmExecute() {
+  const action = confirmAction.value;
+  confirmAction.value = null;
+  if (action === "push") {
+    emit("push", { confirmed: true });
+  } else if (action === "sync") {
+    emit("action", "ai-sync");
+  }
+}
+
+function cancelConfirm() {
+  confirmAction.value = null;
 }
 
 async function suggestMessage() {
@@ -284,11 +300,12 @@ async function ensureCommitMessage({ force = false } = {}) {
     <aside class="action-card">
       <h3>{{ labels.next }}</h3>
       <p class="next-copy">{{ nextStep }}</p>
-      <div class="action-stack">
+      <div class="action-row-pair">
         <button class="btn secondary" type="button" :disabled="Boolean(busy)" @click="emit('action', 'create-recovery')">{{ labels.createRecovery }}</button>
         <button class="btn secondary" type="button" :disabled="Boolean(busy)" @click="emit('action', 'fetch')">{{ labels.fetchRemote }}</button>
-        <button class="btn secondary" type="button" :disabled="Boolean(busy)" @click="emit('action', 'ai-sync')">{{ labels.aiSync }}</button>
-        <label class="push-confirm"><input v-model="pushConfirmed" type="checkbox">{{ labels.pushConfirm }}</label>
+      </div>
+      <button class="btn sync-btn" type="button" :disabled="Boolean(busy)" @click="runSync">{{ labels.aiSync }}</button>
+      <div class="action-stack">
         <button class="btn danger" type="button" :disabled="!canPush" @click="runPush">{{ labels.aiPush }}</button>
         <span class="disabled-reason">{{ pushBlockReason || "推送门禁已满足" }}</span>
       </div>
@@ -318,4 +335,18 @@ async function ensureCommitMessage({ force = false } = {}) {
       <div v-else class="empty-state">{{ labels.fileHint }}</div>
     </div>
   </section>
+
+  <Teleport to="body">
+    <div v-if="confirmAction" class="confirm-overlay" @click.self="cancelConfirm">
+      <div class="confirm-dialog">
+        <h3>{{ confirmAction === 'push' ? '确认推送' : '确认同步' }}</h3>
+        <p v-if="confirmAction === 'push'">即将推送到远端，请确认当前分支的提交已经完成。</p>
+        <p v-else>即将获取远端最新状态并执行 rebase，本地提交会被变基。</p>
+        <div class="confirm-actions">
+          <button class="btn secondary" type="button" @click="cancelConfirm">取消</button>
+          <button class="btn" :class="{ danger: confirmAction === 'push' }" type="button" @click="confirmExecute">确认执行</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
