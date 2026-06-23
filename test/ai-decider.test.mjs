@@ -63,3 +63,48 @@ test("runAiToolLoop executes tool calls and returns final text", async () => {
   assert.equal(result.finalText, "status checked");
   assert.equal(result.toolResults.length, 1);
 });
+
+test("runAiToolLoop uses the active provider resolved by config", async () => {
+  const requests = [];
+  const result = await runAiToolLoop({
+    config: {
+      ai: {
+        activeProvider: "claude",
+        baseUrl: "https://claude.example/v1",
+        apiKey: "claude-key",
+        model: "claude-model",
+        temperature: 0.3,
+        providers: {
+          codex: {
+            baseUrl: "https://codex.example/v1",
+            apiKey: "codex-key",
+            model: "codex-model",
+            temperature: 0.1
+          },
+          claude: {
+            baseUrl: "https://claude.example/v1",
+            apiKey: "claude-key",
+            model: "claude-model",
+            temperature: 0.3
+          }
+        }
+      }
+    },
+    messages: [{ role: "user", content: "inspect" }],
+    tools: [],
+    handlers: {},
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { role: "assistant", content: "done" } }] })
+      };
+    }
+  });
+
+  assert.equal(result.finalText, "done");
+  assert.equal(requests[0].url, "https://claude.example/v1/chat/completions");
+  assert.equal(requests[0].options.headers.authorization, "Bearer claude-key");
+  assert.equal(JSON.parse(requests[0].options.body).model, "claude-model");
+});

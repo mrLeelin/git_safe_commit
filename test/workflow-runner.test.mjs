@@ -40,3 +40,76 @@ test("workflow runner inspects without AI and emits phase events", async () => {
   assert.equal(result.status.branch, "main");
   assert.deepEqual(events.map((item) => item.event), ["phase", "phase"]);
 });
+
+test("workflow runner accepts ai-commit payload and exposes commit tools", async () => {
+  const repo = await createRepo();
+  await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
+  const responses = [
+    {
+      choices: [{
+        message: {
+          role: "assistant",
+          tool_calls: [{
+            id: "call_status",
+            type: "function",
+            function: { name: "git_status", arguments: "{}" }
+          }]
+        }
+      }]
+    },
+    {
+      choices: [{
+        message: {
+          role: "assistant",
+          tool_calls: [{
+            id: "call_add",
+            type: "function",
+            function: { name: "git_add", arguments: JSON.stringify({ paths: ["tracked.txt"] }) }
+          }, {
+            id: "call_commit",
+            type: "function",
+            function: { name: "git_commit", arguments: JSON.stringify({ message: "Explain narrow commit path" }) }
+          }, {
+            id: "call_verify",
+            type: "function",
+            function: { name: "final_verify", arguments: "{}" }
+          }]
+        }
+      }]
+    },
+    {
+      choices: [{
+        message: {
+          role: "assistant",
+          content: "committed"
+        }
+      }]
+    }
+  ];
+  const requestBodies = [];
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {
+        baseUrl: "https://example.test/v1",
+        apiKey: "local-test-key",
+        model: "model-a",
+        temperature: 0
+      }
+    },
+    fetchImpl: async (_url, options) => {
+      requestBodies.push(JSON.parse(options.body));
+      return { ok: true, status: 200, json: async () => responses.shift() };
+    }
+  });
+
+  const result = await runner.run("ai-commit", { paths: ["tracked.txt"], message: "Explain narrow commit path" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.finalText, "committed");
+  assert.deepEqual(result.toolResults.map((item) => item.tool), ["git_status", "git_add", "git_commit", "final_verify"]);
+  assert.match(requestBodies[0].messages.at(-1).content, /"action":"ai-commit"/);
+  assert.match(requestBodies[0].messages.at(-1).content, /"paths":\["tracked.txt"\]/);
+  assert.match(git(repo, ["log", "-1", "--pretty=%s"]).trim(), /^Explain narrow commit path$/);
+});

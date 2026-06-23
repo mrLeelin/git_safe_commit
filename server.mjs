@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { defaultConfigPath, loadConfig, maskConfig, saveConfig } from "./lib/config.mjs";
+import { detectInstalledAi } from "./lib/ai-installations.mjs";
 import { runGit } from "./lib/git-executor.mjs";
 import { createWorkflowRunner } from "./lib/workflow-runner.mjs";
 
@@ -26,11 +27,19 @@ app.get("/api/config", (_req, res) => {
   res.json({ ok: true, config: maskConfig(config) });
 });
 
+app.get("/api/ai/installations", (_req, res) => {
+  res.json({
+    ok: true,
+    selected: config.ai.selected,
+    installations: detectInstalledAi()
+  });
+});
+
 app.post("/api/config", async (req, res, next) => {
   try {
     config = await saveConfig(req.body.config || req.body, configPath, { currentConfig: config });
     runner = createRunner(config);
-    appendLog("config-saved", { repoPath: config.repoPath, aiBaseUrl: config.ai.baseUrl, model: config.ai.model });
+    appendLog("config-saved", { repoPath: config.repoPath, selectedAi: config.ai.selected });
     broadcast("state", { state: runner.state, logs: sessionLogs.slice(-200) });
     res.json({ ok: true, config: maskConfig(config), state: runner.state });
   } catch (error) {

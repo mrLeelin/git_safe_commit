@@ -5,10 +5,25 @@
     "port": 8080
   },
   "ai": {
+    "activeProvider": "codex",
     "baseUrl": "https://api.openai.com/v1",
     "apiKey": "replace-with-your-key",
     "model": "gpt-5.5",
-    "temperature": 0.1
+    "temperature": 0.1,
+    "providers": {
+      "codex": {
+        "baseUrl": "https://api.openai.com/v1",
+        "apiKey": "replace-with-your-codex-key",
+        "model": "gpt-5.5",
+        "temperature": 0.1
+      },
+      "claude": {
+        "baseUrl": "https://api.anthropic.com/v1",
+        "apiKey": "replace-with-your-claude-key",
+        "model": "claude-sonnet-4-5",
+        "temperature": 0.1
+      }
+    }
   },
   "git": {
     "mainBranch": "master",

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "worktreeRoot": "E:\\Project\\SelfHtml\\git_safe_commit_tool",
+  "gitDir": "E:\\Project\\SelfHtml\\git_safe_commit_tool\\.git",
+  "indexMtimeMs": 1782130943670.3213,
+  "indexSize": 9660,
+  "map": "  src/: main\n  lib/: ai-decider, config, git-executor, git-state, recovery, tool-definitions, workflow-runner\n  test/: ai-decider.test, config.test, git-executor.test, git-state.test, recovery.test, server-smoke.test, ui-structure.test, workflow-runner.test\n  (root): server, vite.config\n  .agents/: api, app, modal, output-viewer, dom, excel-workbench, registry, script-workbench, text-workbench, git-safe-commit-ensure-server\n  .kiro/: api, app, modal, output-viewer, dom, excel-workbench, registry, script-workbench, text-workbench, git-safe-commit-ensure-server",
+  "createdAt": "2026-06-22T12:49:35.251Z"
+}

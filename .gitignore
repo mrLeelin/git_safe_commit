@@ -3,6 +3,7 @@ config.json
 node_modules/
 dist/
 output/
+.playwright-cli/
 __pycache__/
 *.pyc
 .codex/skills/

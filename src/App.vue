@@ -1,74 +1,89 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import {
+  buildSettingsPayload,
+  createDefaultSettingsForm,
+  fillSettingsFormFromConfig
+} from "./settings-model.js";
 
 const zh = {
-  title: "\u0047\u0069\u0074 \u5b89\u5168\u63d0\u4ea4",
-  desc: "\u672c\u5730 \u0047\u0069\u0074 \u5b89\u5168\u5de5\u4f5c\u53f0\u3002\u0041\u0049 \u8d1f\u8d23\u5224\u65ad\u548c\u64cd\u4f5c\u5efa\u8bae\uff0c\u004e\u006f\u0064\u0065 \u5b89\u5168\u5c42\u53ea\u6267\u884c\u767d\u540d\u5355 \u0047\u0069\u0074 \u547d\u4ee4\u3002",
-  connected: "\u672c\u5730\u670d\u52a1\u5df2\u8fde\u63a5",
-  connecting: "\u6b63\u5728\u8fde\u63a5",
-  noRepoPath: "\u5c1a\u672a\u914d\u7f6e\u4ed3\u5e93\u8def\u5f84",
-  quick: "\u5feb\u6377\u64cd\u4f5c",
-  inspectRepo: "\u68c0\u67e5\u4ed3\u5e93",
-  createRecovery: "\u521b\u5efa\u6062\u590d\u70b9",
-  aiSync: "\u0041\u0049 \u540c\u6b65",
-  aiPush: "\u0041\u0049 \u63a8\u9001",
-  panels: "\u9762\u677f",
-  overview: "\u603b\u89c8",
-  gitStatus: "\u0047\u0069\u0074 \u72b6\u6001",
-  recovery: "\u6062\u590d\u70b9",
-  blockers: "\u963b\u65ad\u9879",
-  logs: "\u65e5\u5fd7",
-  settings: "\u8bbe\u7f6e",
-  hero: "\u8ba9 \u0041\u0049 \u6309\u5b89\u5168\u89c4\u5219\u6267\u884c \u0047\u0069\u0074 \u540c\u6b65\u548c\u63a8\u9001",
-  heroDesc: "\u5148\u68c0\u67e5\u72b6\u6001\uff0c\u518d\u521b\u5efa\u6062\u590d\u70b9\u3002\u51b2\u7a81\u3001\u810f\u5de5\u4f5c\u533a\u548c\u5371\u9669\u547d\u4ee4\u4f1a\u88ab\u963b\u65ad\u3002",
-  phase: "\u9636\u6bb5",
-  repo: "\u4ed3\u5e93",
-  sync: "\u540c\u6b65",
-  ahead: "\u9886\u5148\u63d0\u4ea4",
-  behind: "\u843d\u540e\u63d0\u4ea4",
-  worktree: "\u5de5\u4f5c\u533a",
-  clean: "\u5e72\u51c0",
-  dirty: "\u6709\u6539\u52a8",
-  unchecked: "\u672a\u68c0\u67e5",
-  risk: "\u98ce\u9669\u6458\u8981",
-  next: "\u4e0b\u4e00\u6b65\u5efa\u8bae",
-  recoveryPoint: "\u6062\u590d\u70b9",
-  noRecovery: "\u672c\u8f6e\u8fd8\u6ca1\u6709\u6062\u590d\u70b9\u3002",
-  noBlockers: "\u5f53\u524d\u6ca1\u6709\u963b\u65ad\u9879\u3002",
-  noRisk: "\u6ca1\u6709\u53d1\u73b0\u963b\u65ad\u9879\u3002",
-  notInspected: "\u8fd8\u6ca1\u6709\u68c0\u67e5\u4ed3\u5e93\u72b6\u6001\u3002",
-  changedItems: "\u4e2a\u6539\u52a8\u9879",
-  staged: "\u5df2\u6682\u5b58",
-  unstaged: "\u672a\u6682\u5b58",
-  untracked: "\u672a\u8ddf\u8e2a",
-  conflicts: "\u51b2\u7a81",
-  graph: "\u0047\u0069\u0074 \u63d0\u4ea4\u6811",
-  refresh: "\u5237\u65b0",
-  noGraph: "\u6682\u65e0\u63d0\u4ea4\u56fe\u3002",
-  group: "\u5206\u7ec4",
-  status: "\u72b6\u6001",
-  path: "\u8def\u5f84",
-  fileHint: "\u70b9\u51fb\u201c\u68c0\u67e5\u4ed3\u5e93\u201d\u540e\u663e\u793a\u6587\u4ef6\u5217\u8868\u3002",
-  recoveryEvidence: "\u6062\u590d\u8bc1\u636e",
-  eventLog: "\u4e8b\u4ef6\u65e5\u5fd7",
-  saveLocal: "\u4fdd\u5b58\u5230\u672c\u5730 config.json\u3002\u8bfb\u53d6\u914d\u7f6e\u65f6 API Key \u4f1a\u88ab\u8131\u654f\u3002",
-  repoPath: "\u4ed3\u5e93\u8def\u5f84",
-  aiBase: "\u0041\u0049 \u5730\u5740",
-  model: "\u6a21\u578b",
-  temp: "\u6e29\u5ea6",
-  confirmPush: "\u63a8\u9001\u524d\u8981\u6c42\u6d4f\u89c8\u5668\u786e\u8ba4",
-  saveSettings: "\u4fdd\u5b58\u8bbe\u7f6e",
-  reload: "\u91cd\u65b0\u8bfb\u53d6",
-  lastOutput: "\u6700\u8fd1\u4e00\u6b21\u64cd\u4f5c\u8f93\u51fa",
-  waiting: "\u7b49\u5f85\u68c0\u67e5\u4ed3\u5e93\u72b6\u6001\u3002",
-  forbidPull: "\u7981\u6b62 git pull",
-  forbidReset: "\u7981\u6b62 reset --hard",
-  forbidClean: "\u7981\u6b62 git clean",
-  forbidStashPop: "\u7981\u6b62 stash pop",
-  forbidForcePush: "\u7981\u6b62 force push"
+  title: "Git 安全提交",
+  desc: "面向脏工作区的本地提交与推送控制台。只提交你确认过的路径。",
+  connected: "本地服务已连接",
+  connecting: "正在连接",
+  noRepoPath: "尚未配置仓库路径",
+  workflow: "提交工作流",
+  inspectRepo: "检查仓库",
+  createRecovery: "创建恢复点",
+  aiCommit: "提交选中文件",
+  aiSync: "同步远端",
+  aiPush: "推送到远端",
+  repo: "仓库",
+  branch: "分支",
+  upstream: "上游",
+  phase: "阶段",
+  ahead: "领先",
+  behind: "落后",
+  worktree: "工作区",
+  clean: "干净",
+  dirty: "有改动",
+  unchecked: "未检查",
+  commitQueue: "提交队列",
+  commitMessage: "提交说明",
+  commitMessagePlaceholder: "用一句话说明这次提交为什么存在",
+  selectableFiles: "可提交文件",
+  conflictFiles: "冲突文件",
+  safety: "安全状态",
+  blockers: "阻断项",
+  noBlockers: "当前没有阻断项。",
+  next: "下一步",
+  recoveryPoint: "恢复点",
+  noRecovery: "本轮还没有恢复点。",
+  pushConfirm: "我确认这次推送只包含当前分支上已经完成的提交",
+  graph: "Git 提交树",
+  refresh: "刷新",
+  noGraph: "暂无提交图。",
+  status: "状态",
+  path: "路径",
+  group: "分组",
+  fileHint: "先检查仓库后显示文件列表。",
+  staged: "已暂存",
+  unstaged: "未暂存",
+  untracked: "未跟踪",
+  conflicts: "冲突",
+  logs: "日志",
+  settings: "设置",
+  output: "最近输出",
+  eventLog: "事件日志",
+  saveLocal: "保存到本地 config.json。读取配置时 API Key 会被脱敏。",
+  repoPath: "仓库路径",
+  aiBase: "AI 地址",
+  model: "模型",
+  temp: "温度",
+  confirmPush: "推送前要求浏览器确认",
+  saveSettings: "保存设置",
+  reload: "重新读取",
+  waiting: "等待检查仓库状态。",
+  missingMessage: "先填写提交说明。",
+  missingFiles: "先选择要提交的文件。",
+  blocked: "被安全检查阻断",
+  ready: "可执行",
+  needsInspect: "需要检查",
+  protectedRules: "保护规则",
+  forbidPull: "禁止 git pull",
+  forbidReset: "禁止 reset --hard",
+  forbidClean: "禁止 git clean",
+  forbidStashPop: "禁止 stash pop",
+  forbidForcePush: "禁止 force push"
 };
 
-const activePanel = ref("overview");
+const activeView = ref("workflow");
+const activeSettingsTab = ref("general");
+const themeMode = ref("dark");
+const railCollapsed = ref(false);
+const selectedPaths = ref([]);
+const commitMessage = ref("");
+const pushConfirmed = ref(false);
 const view = reactive({
   config: null,
   state: null,
@@ -78,64 +93,131 @@ const view = reactive({
   busy: "",
   connection: zh.connecting,
   connected: false,
-  configState: "\u672a\u4fdd\u5b58",
+  configState: "未保存",
   commits: [],
-  graphError: ""
+  graphError: "",
+  aiInstallations: []
 });
-const form = reactive({ repoPath: "", baseUrl: "", model: "", apiKey: "", temperature: 0.1, requireConfirmBeforePush: true });
+const form = reactive(createDefaultSettingsForm());
+
+const appClasses = computed(() => [
+  `theme-${themeMode.value}`,
+  { "rail-collapsed": railCollapsed.value }
+]);
 const summary = computed(() => view.result?.summary || null);
 const status = computed(() => view.result?.status || null);
 const blockers = computed(() => view.state?.blockers || summary.value?.blockers || []);
 const recovery = computed(() => view.state?.activeRecovery || null);
-const repoName = computed(() => (view.config?.repoPath || "").split(/[\\/]/).filter(Boolean).at(-1) || "\u672a\u914d\u7f6e\u4ed3\u5e93");
-const changedCount = computed(() => {
-  const s = summary.value;
-  return s ? (s.stagedCount || 0) + (s.unstagedCount || 0) + (s.untrackedCount || 0) + (s.unmergedCount || 0) : 0;
-});
+const repoName = computed(() => (view.config?.repoPath || "").split(/[\\/]/).filter(Boolean).at(-1) || "未配置仓库");
+const installedAi = computed(() => view.aiInstallations || []);
+const selectedAi = computed(() => installedAi.value.find((ai) => ai.id === form.selectedAi) || null);
+const settingsTabs = [
+  { id: "general", label: "通用设置" },
+  { id: "repo", label: "仓库路径" },
+  { id: "ai", label: "AI 服务" },
+  { id: "safety", label: "安全确认" },
+  { id: "local", label: "本地配置" }
+];
+const sections = computed(() => [
+  { id: "staged", name: zh.staged, files: status.value?.staged || [], selectable: true },
+  { id: "unstaged", name: zh.unstaged, files: status.value?.unstaged || [], selectable: true },
+  { id: "untracked", name: zh.untracked, files: (status.value?.untracked || []).map((path) => ({ status: "??", path })), selectable: true },
+  { id: "conflicts", name: zh.conflicts, files: (status.value?.unmerged || []).map((path) => ({ status: "UU", path })), selectable: false }
+]);
+const files = computed(() => sections.value.flatMap((section) => section.files.map((file) => ({
+  ...file,
+  group: section.name,
+  sectionId: section.id,
+  selectable: section.selectable
+}))));
+const selectableFiles = computed(() => files.value.filter((file) => file.selectable));
+const conflictFiles = computed(() => files.value.filter((file) => !file.selectable));
+const selectedFileCount = computed(() => selectedPaths.value.length);
+const selectedFilesLabel = computed(() => `${selectedFileCount.value} / ${selectableFiles.value.length}`);
+const changedCount = computed(() => files.value.length);
+const canCommit = computed(() => !commitBlockReason.value && !view.busy);
+const canPush = computed(() => !pushBlockReason.value && !view.busy);
+const setupItems = computed(() => [
+  { label: "配置仓库", ok: Boolean(view.config?.repoPath), detail: view.config?.repoPath || "未配置" },
+  { label: "选择 AI", ok: Boolean(selectedAi.value), detail: selectedAi.value ? `${selectedAi.value.label} 已就绪` : (view.config?.ai?.selected || "未选择") },
+  { label: "读取状态", ok: Boolean(summary.value), detail: summary.value ? "已检查" : "等待检查" }
+]);
+
 const syncText = computed(() => {
   const s = summary.value;
-  if (!s) return "\u672a\u77e5";
-  if (s.ahead && s.behind) return `\u9886\u5148 ${s.ahead} / \u843d\u540e ${s.behind}`;
-  if (s.ahead) return `\u9886\u5148 ${s.ahead}`;
-  if (s.behind) return `\u843d\u540e ${s.behind}`;
-  return "\u5df2\u540c\u6b65";
+  if (!s) return "未知";
+  if (s.ahead && s.behind) return `领先 ${s.ahead} / 落后 ${s.behind}`;
+  if (s.ahead) return `领先 ${s.ahead}`;
+  if (s.behind) return `落后 ${s.behind}`;
+  return "已同步";
+});
+const readiness = computed(() => {
+  if (!summary.value) return { label: zh.needsInspect, tone: "warn" };
+  if (blockers.value.length) return { label: zh.blocked, tone: "bad" };
+  return { label: zh.ready, tone: "ok" };
+});
+const commitBlockReason = computed(() => {
+  if (!view.config?.repoPath) return "缺少仓库路径";
+  if (!selectedAi.value) return "未选择可用 AI";
+  if (!summary.value) return "先检查仓库";
+  if (blockers.value.length) return "存在阻断项";
+  if (!selectedPaths.value.length) return "先选择文件";
+  if (!commitMessage.value.trim()) return "先填写提交说明";
+  return "";
+});
+const pushBlockReason = computed(() => {
+  if (!view.config?.repoPath) return "缺少仓库路径";
+  if (!selectedAi.value) return "未选择可用 AI";
+  if (!summary.value) return "先检查仓库";
+  if (blockers.value.length) return "存在阻断项";
+  if (form.requireConfirmBeforePush && !pushConfirmed.value) return "需要推送确认";
+  return "";
 });
 const nextStep = computed(() => {
-  if (!view.config?.repoPath) return "\u5148\u5728\u8bbe\u7f6e\u4e2d\u586b\u5199\u4ed3\u5e93\u8def\u5f84\u3002";
-  if (!summary.value) return "\u70b9\u51fb\u201c\u68c0\u67e5\u4ed3\u5e93\u201d\uff0c\u8bfb\u53d6\u5206\u652f\u3001\u4e0a\u6e38\u3001\u5de5\u4f5c\u533a\u3001\u51b2\u7a81\u548c diff \u68c0\u67e5\u7ed3\u679c\u3002";
-  if (blockers.value.length) return "\u5148\u5904\u7406\u963b\u65ad\u9879\uff0c\u518d\u6267\u884c AI \u540c\u6b65\u6216 AI \u63a8\u9001\u3002";
-  if (!recovery.value) return "\u521b\u5efa\u6062\u590d\u70b9\uff0c\u518d\u6267\u884c\u53ef\u80fd\u5305\u542b rebase \u7684\u540c\u6b65\u52a8\u4f5c\u3002";
-  if (summary.value.behind) return "\u53ef\u4ee5\u6267\u884c AI \u540c\u6b65\u3002\u5de5\u5177\u4f1a\u4f7f\u7528\u767d\u540d\u5355 Git \u547d\u4ee4\uff0c\u4e0d\u4f1a\u6267\u884c git pull\u3002";
-  if (summary.value.ahead) return "\u53ef\u4ee5\u6267\u884c AI \u63a8\u9001\u3002\u63a8\u9001\u524d\u4ecd\u4f1a\u7ecf\u8fc7\u5b89\u5168\u68c0\u67e5\u548c\u6d4f\u89c8\u5668\u786e\u8ba4\u3002";
-  return "\u4ed3\u5e93\u5f53\u524d\u53ef\u7528\u3002\u6bcf\u6b21\u8fdc\u7aef\u64cd\u4f5c\u524d\u5efa\u8bae\u91cd\u65b0\u68c0\u67e5\u3002";
+  if (!view.config?.repoPath) return "先在设置里填写仓库路径。";
+  if (!selectedAi.value) return "先在设置里选择一个本机可用的 AI。";
+  if (!summary.value) return "先检查仓库，确认分支、上游、工作区、冲突和 diff 检查结果。";
+  if (blockers.value.length) return "先处理阻断项；冲突、diff 检查失败或缺少上游时不会提交或推送。";
+  if (selectedPaths.value.length && !commitMessage.value.trim()) return "已选中文件，补一条提交说明后就能提交。";
+  if (selectedPaths.value.length) return "可以提交选中文件。工具只会 stage 这些路径，不会扫入其他改动。";
+  if (summary.value.behind && !recovery.value) return "分支落后时先创建恢复点，再同步远端。";
+  if (summary.value.behind) return "可以同步远端。同步使用 fetch + rebase，不执行 git pull。";
+  if (summary.value.ahead) return "可以推送。若启用了推送确认，需要先勾选确认框。";
+  return "选择要提交的文件，或在需要时同步/推送。";
 });
-const sections = computed(() => [
-  { name: zh.staged, files: status.value?.staged || [] },
-  { name: zh.unstaged, files: status.value?.unstaged || [] },
-  { name: zh.untracked, files: (status.value?.untracked || []).map((path) => ({ status: "??", path })) },
-  { name: zh.conflicts, files: (status.value?.unmerged || []).map((path) => ({ status: "UU", path })) }
-]);
-const files = computed(() => sections.value.flatMap((section) => section.files.map((file) => ({ ...file, group: section.name }))));
-const panels = [["overview", zh.overview], ["status", zh.gitStatus], ["recovery", zh.recovery], ["blockers", zh.blockers], ["logs", zh.logs], ["settings", zh.settings]];
+
+watch(selectableFiles, (nextFiles) => {
+  const allowed = new Set(nextFiles.map((file) => file.path));
+  selectedPaths.value = selectedPaths.value.filter((path) => allowed.has(path));
+}, { immediate: true });
 
 onMounted(init);
+
 async function init() {
   try {
     await loadConfigAndState();
     connect(true);
     openEvents();
     await loadGraph();
+    if (view.config?.repoPath) await runAction("inspect");
   } catch (error) {
     connect(false, error.message);
   }
 }
+
 async function loadConfigAndState() {
-  const [config, state] = await Promise.all([api("/api/config"), api("/api/state")]);
+  const [config, state, aiInstallations] = await Promise.all([
+    api("/api/config"),
+    api("/api/state"),
+    api("/api/ai/installations")
+  ]);
   view.config = config.config;
   view.state = state.state;
   view.logs = state.logs || [];
+  view.aiInstallations = aiInstallations.installations || [];
   fillForm(view.config);
 }
+
 async function loadGraph() {
   try {
     const result = await api("/api/git/graph");
@@ -146,53 +228,100 @@ async function loadGraph() {
     view.graphError = error.message;
   }
 }
-async function runAction(action) {
+
+async function runAction(action, payload = {}) {
   view.busy = action;
-  log("\u754c\u9762\u64cd\u4f5c", { action: labelAction(action) });
+  log("界面操作", { action: labelAction(action), payload: publicPayload(payload) });
   try {
-    const result = await api(`/api/action/${action}`, { method: "POST", body: "{}" });
+    const result = await api(`/api/action/${action}`, { method: "POST", body: JSON.stringify(payload) });
     if (result.status || result.summary) view.result = { status: result.status, summary: result.summary };
     view.details = JSON.stringify(result, null, 2);
-    log("\u64cd\u4f5c\u5b8c\u6210", { action: labelAction(action) });
-    if (action === "inspect" || action === "create-recovery") await loadGraph();
+    log("操作完成", { action: labelAction(action) });
+    if (action === "inspect" || action === "create-recovery" || action.startsWith("ai-")) {
+      await Promise.all([loadConfigAndState(), loadGraph()]);
+      if (action === "ai-commit") {
+        commitMessage.value = "";
+        selectedPaths.value = [];
+      }
+    }
   } catch (error) {
-    view.details = `\u9519\u8bef\n${error.message}`;
-    log("\u64cd\u4f5c\u5931\u8d25", { action: labelAction(action), message: error.message });
+    view.details = `错误\n${error.message}`;
+    log("操作失败", { action: labelAction(action), message: error.message });
   } finally {
     view.busy = "";
   }
 }
+
+function runCommit() {
+  if (commitBlockReason.value) {
+    view.details = commitBlockReason.value;
+    return;
+  }
+  runAction("ai-commit", { paths: selectedPaths.value, message: commitMessage.value.trim() });
+}
+
+function runPush() {
+  if (pushBlockReason.value) {
+    view.details = pushBlockReason.value;
+    return;
+  }
+  runAction("ai-push", { confirmed: pushConfirmed.value });
+}
+
+function togglePath(path) {
+  selectedPaths.value = selectedPaths.value.includes(path)
+    ? selectedPaths.value.filter((item) => item !== path)
+    : [...selectedPaths.value, path];
+}
+
+function selectAll() {
+  selectedPaths.value = selectableFiles.value.map((file) => file.path);
+}
+
+function selectSection(sectionId) {
+  const picked = files.value.filter((file) => file.selectable && file.sectionId === sectionId).map((file) => file.path);
+  selectedPaths.value = [...new Set([...selectedPaths.value, ...picked])];
+}
+
+function clearSelection() {
+  selectedPaths.value = [];
+}
+
+function toggleTheme() {
+  themeMode.value = themeMode.value === "dark" ? "light" : "dark";
+}
+
+function toggleRail() {
+  railCollapsed.value = !railCollapsed.value;
+}
+
 async function saveSettings() {
-  view.configState = "\u6b63\u5728\u4fdd\u5b58";
+  view.configState = "正在保存";
   try {
     const result = await api("/api/config", { method: "POST", body: JSON.stringify({ config: settingsPayload() }) });
     view.config = result.config;
     view.state = result.state || view.state;
     fillForm(view.config);
-    view.configState = "\u5df2\u4fdd\u5b58";
+    view.configState = "已保存";
     await loadGraph();
   } catch (error) {
     view.configState = error.message;
   }
 }
+
 function settingsPayload() {
-  const payload = { repoPath: form.repoPath.trim(), ai: { baseUrl: form.baseUrl.trim(), model: form.model.trim(), temperature: Number(form.temperature || 0.1) }, workflow: { requireConfirmBeforePush: form.requireConfirmBeforePush } };
-  if (form.apiKey.trim()) payload.ai.apiKey = form.apiKey.trim();
-  return payload;
+  return buildSettingsPayload(form);
 }
+
 function fillForm(config) {
-  form.repoPath = config.repoPath || "";
-  form.baseUrl = config.ai?.baseUrl || "";
-  form.model = config.ai?.model || "";
-  form.apiKey = "";
-  form.temperature = config.ai?.temperature ?? 0.1;
-  form.requireConfirmBeforePush = Boolean(config.workflow?.requireConfirmBeforePush);
-  view.configState = config.ai?.apiKey ? "Key \u5df2\u4fdd\u5b58" : "\u7f3a\u5c11 Key";
+  fillSettingsFormFromConfig(form, config);
+  view.configState = selectedAi.value ? "已选择" : "未选择";
 }
+
 function openEvents() {
   const events = new EventSource("/api/events");
   events.onopen = () => connect(true);
-  events.onerror = () => connect(false, "\u4e8b\u4ef6\u6d41\u65ad\u5f00\uff0c\u6d4f\u89c8\u5668\u4f1a\u81ea\u52a8\u91cd\u8fde");
+  events.onerror = () => connect(false, "事件流断开，浏览器会自动重连");
   events.addEventListener("state", (event) => {
     const data = JSON.parse(event.data);
     view.state = data.state || view.state;
@@ -206,71 +335,205 @@ function openEvents() {
     });
   }
 }
+
 async function api(path, options = {}) {
   const response = await fetch(path, { headers: { "content-type": "application/json" }, ...options });
   const data = await response.json();
   if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
   return data;
 }
-function connect(ok, note = "") { view.connected = ok; view.connection = ok ? zh.connected : `\u8fde\u63a5\u65ad\u5f00${note ? `\uff1a${note}` : ""}`; }
-function log(event, data) { view.logs.push({ time: new Date().toISOString(), event, data }); }
-function labelAction(action) { return ({ inspect: zh.inspectRepo, "create-recovery": zh.createRecovery, "ai-sync": zh.aiSync, "ai-push": zh.aiPush })[action] || action; }
+
+function connect(ok, note = "") {
+  view.connected = ok;
+  view.connection = ok ? zh.connected : `连接断开${note ? `：${note}` : ""}`;
+}
+
+function log(event, data) {
+  view.logs.push({ time: new Date().toISOString(), event, data });
+}
+
+function labelAction(action) {
+  return ({
+    inspect: zh.inspectRepo,
+    "create-recovery": zh.createRecovery,
+    "ai-commit": zh.aiCommit,
+    "ai-sync": zh.aiSync,
+    "ai-push": zh.aiPush
+  })[action] || action;
+}
+
+function publicPayload(payload) {
+  return { ...payload, message: payload.message ? "[commit message]" : undefined };
+}
 </script>
 
 <template>
-  <div class="layout">
-    <aside class="side">
-      <div class="brand">G</div>
-      <h1>{{ zh.title }}</h1>
-      <p class="muted">{{ zh.desc }}</p>
-      <div class="side-card">
+  <div class="app-shell" :class="appClasses">
+    <aside class="rail">
+      <div class="brand-block">
+        <div class="brand">G</div>
+        <div>
+          <h1>{{ zh.title }}</h1>
+          <p class="muted">{{ zh.desc }}</p>
+        </div>
+      </div>
+
+      <div class="connection-card">
         <span class="pill"><span class="dot" :class="{ ok: view.connected }"></span>{{ view.connection }}</span>
-        <span class="repo-path">{{ view.config?.repoPath || zh.noRepoPath }}</span>
+        <strong>{{ repoName }}</strong>
+        <code>{{ view.config?.repoPath || zh.noRepoPath }}</code>
       </div>
-      <div class="side-section">
-        <h3>{{ zh.quick }}</h3>
-        <button class="side-action primary" type="button" :disabled="Boolean(view.busy)" @click="runAction('inspect')">{{ zh.inspectRepo }}</button>
-        <button class="side-action" type="button" :disabled="Boolean(view.busy)" @click="runAction('create-recovery')">{{ zh.createRecovery }}</button>
-        <button class="side-action" type="button" :disabled="Boolean(view.busy)" @click="runAction('ai-sync')">{{ zh.aiSync }}</button>
-        <button class="side-action" type="button" :disabled="Boolean(view.busy)" @click="runAction('ai-push')">{{ zh.aiPush }}</button>
+
+      <div class="setup-card">
+        <h2>启动检查</h2>
+        <div v-for="item in setupItems" :key="item.label" class="setup-row" :class="{ ok: item.ok }">
+          <span class="setup-dot"></span>
+          <strong>{{ item.label }}</strong>
+          <small>{{ item.detail }}</small>
+        </div>
       </div>
-      <div class="side-section">
-        <h3>{{ zh.panels }}</h3>
-        <button v-for="[id, label] in panels" :key="id" class="side-action" :class="{ active: activePanel === id }" type="button" @click="activePanel = id">{{ label }}</button>
+
+      <div class="rail-tools">
+        <button class="rail-tool" type="button" @click="toggleTheme">
+          <span class="rail-tool-icon">{{ themeMode === 'dark' ? 'S' : 'D' }}</span>
+          <strong>{{ themeMode === 'dark' ? '浅色模式' : '暗色模式' }}</strong>
+        </button>
+        <button class="rail-tool" type="button" @click="toggleRail">
+          <span class="rail-tool-icon">{{ railCollapsed ? '>>' : '<<' }}</span>
+          <strong>{{ railCollapsed ? '展开' : '收起' }}</strong>
+        </button>
       </div>
-      <div class="rules">
-        <span>{{ zh.forbidPull }}</span><span>{{ zh.forbidReset }}</span><span>{{ zh.forbidClean }}</span><span>{{ zh.forbidStashPop }}</span><span>{{ zh.forbidForcePush }}</span>
-      </div>
+
+      <nav class="main-nav" aria-label="primary">
+        <button type="button" :class="{ active: activeView === 'workflow' }" @click="activeView = 'workflow'">
+          <span>1</span><strong>提交工作流</strong>
+        </button>
+        <button type="button" :class="{ active: activeView === 'graph' }" @click="activeView = 'graph'">
+          <span>2</span><strong>git 树</strong>
+        </button>
+        <button type="button" :class="{ active: activeView === 'settings' }" @click="activeView = 'settings'">
+          <span>3</span><strong>设置</strong>
+        </button>
+      </nav>
     </aside>
-    <main class="main">
-      <section class="hero">
-        <div class="toolbar">
-          <span class="pill"><span class="dot ok"></span>{{ zh.phase }}: {{ view.state?.phase || "Idle" }}</span>
-          <span class="pill">{{ zh.repo }}: {{ repoName }}</span>
-          <span class="pill">{{ zh.sync }}: {{ syncText }}</span>
+
+    <main class="workspace" :class="{ 'settings-workspace': activeView === 'settings' || activeView === 'graph' }">
+      <header class="topbar" :class="{ 'settings-topbar': activeView === 'settings' || activeView === 'graph' }">
+        <div>
+          <p class="eyebrow">{{ activeView === 'workflow' ? zh.workflow : activeView === 'graph' ? 'git 树' : '系统设置' }}</p>
+          <h2>{{ activeView === 'workflow' ? '检查、选择、提交、推送' : activeView === 'graph' ? '查看提交历史与分支位置' : '管理仓库、AI 与提交策略' }}</h2>
         </div>
-        <h2>{{ zh.hero }}</h2>
-        <p class="muted">{{ zh.heroDesc }}</p>
-        <div class="toolbar">
-          <button class="btn" type="button" :disabled="Boolean(view.busy)" @click="runAction('inspect')">{{ zh.inspectRepo }}</button>
-          <button class="btn secondary" type="button" :disabled="Boolean(view.busy)" @click="runAction('create-recovery')">{{ zh.recovery }}</button>
-          <button class="btn secondary" type="button" :disabled="Boolean(view.busy)" @click="runAction('ai-sync')">{{ zh.aiSync }}</button>
-          <button class="btn secondary" type="button" :disabled="Boolean(view.busy)" @click="runAction('ai-push')">{{ zh.aiPush }}</button>
+        <div v-if="activeView === 'workflow'" class="command-bar">
+          <button class="mini-command" type="button" :disabled="Boolean(view.busy)" @click="runAction('inspect')">{{ zh.inspectRepo }}</button>
+          <button class="mini-command" type="button" :disabled="!canCommit" @click="runCommit">{{ zh.aiCommit }}</button>
+          <button class="mini-command danger" type="button" :disabled="!canPush" @click="runPush">{{ zh.aiPush }}</button>
         </div>
-      </section>
-      <section class="grid three">
-        <div class="metric"><span>{{ zh.ahead }}</span><strong>{{ summary?.ahead ?? "-" }}</strong></div>
-        <div class="metric"><span>{{ zh.behind }}</span><strong>{{ summary?.behind ?? "-" }}</strong></div>
+      </header>
+
+      <section v-if="activeView === 'workflow'" class="status-metrics">
+        <div class="metric" :class="readiness.tone"><span>{{ zh.safety }}</span><strong>{{ readiness.label }}</strong></div>
+        <div class="metric"><span>{{ zh.branch }}</span><strong>{{ summary?.branch || "-" }}</strong></div>
+        <div class="metric"><span>{{ zh.ahead }} / {{ zh.behind }}</span><strong>{{ summary ? `${summary.ahead} / ${summary.behind}` : "-" }}</strong></div>
         <div class="metric"><span>{{ zh.worktree }}</span><strong>{{ summary ? (summary.cleanWorktree ? zh.clean : zh.dirty) : zh.unchecked }}</strong></div>
       </section>
-      <section class="grid" v-show="activePanel === 'overview'">
-        <article class="panel"><h3>{{ zh.risk }}</h3><pre class="box" :class="{ bad: blockers.length }">{{ summary ? (blockers.length ? blockers.join("\n") : zh.noRisk) : zh.notInspected }}</pre></article>
-        <article class="panel"><h3>{{ zh.next }}</h3><pre class="box warn">{{ nextStep }}</pre></article>
-        <article class="panel"><h3>{{ zh.recoveryPoint }}</h3><pre class="box warn">{{ recovery ? JSON.stringify(recovery, null, 2) : zh.noRecovery }}</pre></article>
-        <article class="panel"><h3>{{ zh.blockers }}</h3><pre class="box" :class="{ bad: blockers.length }">{{ blockers.length ? blockers.join("\n") : zh.noBlockers }}</pre></article>
+
+      <section v-if="activeView === 'workflow'" class="primary-grid">
+        <article class="commit-card">
+          <div class="panel-head">
+            <div>
+              <h3>{{ zh.commitQueue }}</h3>
+              <p class="muted">只提交勾选的路径；未勾选的本地改动会保留在工作区。</p>
+            </div>
+            <span class="counter">{{ selectedFilesLabel }}</span>
+          </div>
+
+          <div class="commit-message">
+            <label>
+              <span>{{ zh.commitMessage }}</span>
+              <textarea v-model="commitMessage" :placeholder="zh.commitMessagePlaceholder" rows="3"></textarea>
+            </label>
+          </div>
+
+          <div class="file-actions">
+            <button class="text-button" type="button" @click="selectAll">全选可提交</button>
+            <button class="text-button" type="button" @click="selectSection('staged')">只选已暂存</button>
+            <button class="text-button" type="button" @click="selectSection('unstaged')">只选未暂存</button>
+            <button class="text-button" type="button" @click="clearSelection">清空选择</button>
+            <button class="text-button" type="button" @click="runAction('inspect')">{{ zh.refresh }}</button>
+          </div>
+
+          <div class="queue-list">
+            <button
+              v-for="file in selectableFiles"
+              :key="`${file.group}:${file.path}`"
+              class="queue-row"
+              :class="{ selected: selectedPaths.includes(file.path) }"
+              type="button"
+              @click="togglePath(file.path)"
+            >
+              <span class="checkmark" aria-hidden="true"></span>
+              <span class="file-meta"><strong>{{ file.path }}</strong><small>{{ file.group }} · {{ file.status }}</small></span>
+            </button>
+            <div v-if="!selectableFiles.length" class="empty-state">{{ zh.fileHint }}</div>
+          </div>
+
+          <div v-if="conflictFiles.length" class="conflict-box">
+            <strong>{{ zh.conflictFiles }}</strong>
+            <code v-for="file in conflictFiles" :key="file.path">{{ file.path }}</code>
+          </div>
+
+          <div class="commit-actions">
+            <button class="btn" type="button" :disabled="!canCommit" @click="runCommit">{{ zh.aiCommit }}</button>
+            <span class="disabled-reason">{{ commitBlockReason || "将按选中路径提交" }}</span>
+          </div>
+        </article>
+
+        <aside class="action-card">
+          <h3>{{ zh.next }}</h3>
+          <p class="next-copy">{{ nextStep }}</p>
+          <div class="action-stack">
+            <button class="btn secondary" type="button" :disabled="Boolean(view.busy)" @click="runAction('create-recovery')">{{ zh.createRecovery }}</button>
+            <button class="btn secondary" type="button" :disabled="Boolean(view.busy)" @click="runAction('ai-sync')">{{ zh.aiSync }}</button>
+            <label class="push-confirm"><input v-model="pushConfirmed" type="checkbox">{{ zh.pushConfirm }}</label>
+            <button class="btn danger" type="button" :disabled="!canPush" @click="runPush">{{ zh.aiPush }}</button>
+            <span class="disabled-reason">{{ pushBlockReason || "推送门禁已满足" }}</span>
+          </div>
+          <div class="safety-box" :class="{ bad: blockers.length }">
+            <strong>{{ zh.blockers }}</strong>
+            <pre>{{ blockers.length ? blockers.join("\n") : zh.noBlockers }}</pre>
+          </div>
+          <div class="safety-box warn">
+            <strong>{{ zh.recoveryPoint }}</strong>
+            <pre>{{ recovery ? JSON.stringify(recovery, null, 2) : zh.noRecovery }}</pre>
+          </div>
+        </aside>
       </section>
-      <section class="panel" v-show="activePanel === 'status' || activePanel === 'overview'">
-        <div class="panel-head compact-head"><h3>{{ zh.gitStatus }}</h3><span class="muted">{{ changedCount }} {{ zh.changedItems }}</span></div>
+
+      <section v-if="activeView === 'workflow'" class="panel">
+        <div class="panel-head compact-head"><h3>{{ zh.status }}</h3><span class="muted">{{ changedCount }} 个改动项</span></div>
+        <div class="status-strip">
+          <div v-for="section in sections" :key="section.name" class="status-card"><span>{{ section.name }}</span><strong>{{ section.files.length }}</strong></div>
+        </div>
+        <div class="file-table">
+          <div class="table-head"><span>{{ zh.group }}</span><span>{{ zh.status }}</span><span>{{ zh.path }}</span></div>
+          <div v-if="files.length">
+            <div v-for="file in files" :key="`${file.group}:${file.status}:${file.path}`" class="file-row">
+              <span>{{ file.group }}</span><span>{{ file.status }}</span><code>{{ file.path }}</code>
+            </div>
+          </div>
+          <div v-else class="empty-state">{{ zh.fileHint }}</div>
+        </div>
+      </section>
+
+      <section v-if="activeView === 'graph'" class="graph-page">
+        <div class="graph-toolbar">
+          <div>
+            <h3>{{ zh.graph }}</h3>
+            <p>按当前仓库提交历史查看分支、HEAD 和最近提交位置。</p>
+          </div>
+          <button class="btn secondary" type="button" @click="loadGraph">{{ zh.refresh }}</button>
+        </div>
+
         <div class="git-graph-list">
           <div class="graph-titlebar">
             <span></span>
@@ -279,15 +542,15 @@ function labelAction(action) { return ({ inspect: zh.inspectRepo, "create-recove
           </div>
           <div class="graph-branchbar">
             <span class="graph-menu">=</span>
-            <span class="branch-name">main</span>
+            <span class="branch-name">{{ summary?.branch || "main" }}</span>
           </div>
           <div class="graph-body">
             <div class="graph-sidebar"><span>*</span></div>
             <div v-if="view.commits.length" class="commit-list">
               <div v-for="commit in view.commits" :key="commit.hash" class="commit-row" :class="{ head: commit.isHead }">
                 <div class="commit-lanes">
-                  <span v-for="lane in 4" :key="lane" class="lane" :class="{ active: lane - 1 === commit.lane }"></span>
-                  <span class="node" :style="{ left: `${commit.lane * 14 + 8}px` }"></span>
+                  <span class="mainline"></span>
+                  <span class="node"></span>
                 </div>
                 <div class="commit-main">
                   <div class="commit-title">
@@ -303,29 +566,91 @@ function labelAction(action) { return ({ inspect: zh.inspectRepo, "create-recove
             <div v-else class="empty-state">{{ view.graphError || zh.noGraph }}</div>
           </div>
         </div>
-        <div class="status-strip"><div v-for="section in sections" :key="section.name" class="status-card"><span>{{ section.name }}</span><strong>{{ section.files.length }}</strong></div></div>
-        <div class="file-table">
-          <div class="table-head"><span>{{ zh.group }}</span><span>{{ zh.status }}</span><span>{{ zh.path }}</span></div>
-          <div v-if="files.length"><div v-for="file in files" :key="`${file.group}:${file.status}:${file.path}`" class="file-row"><span>{{ file.group }}</span><span>{{ file.status }}</span><code>{{ file.path }}</code></div></div>
-          <div v-else class="empty-state">{{ zh.fileHint }}</div>
-        </div>
       </section>
-      <section class="panel" v-show="activePanel === 'recovery'"><h3>{{ zh.recoveryEvidence }}</h3><pre class="output">{{ recovery ? JSON.stringify(recovery, null, 2) : zh.noRecovery }}</pre></section>
-      <section class="panel" v-show="activePanel === 'blockers'"><h3>{{ zh.blockers }}</h3><pre class="output">{{ blockers.length ? blockers.join("\n") : zh.noBlockers }}</pre></section>
-      <section class="panel" v-show="activePanel === 'logs'"><h3>{{ zh.eventLog }}</h3><ol class="logs"><li v-for="entry in logs" :key="entry.time + entry.event"><time>{{ new Date(entry.time).toLocaleTimeString() }}</time><code>{{ entry.event }}: {{ JSON.stringify(entry.data) }}</code></li></ol></section>
-      <section class="panel" v-show="activePanel === 'settings'">
-        <div class="panel-head"><div><h3>{{ zh.settings }}</h3><p class="muted">{{ zh.saveLocal }}</p></div><span class="status-label">{{ view.configState }}</span></div>
-        <form class="settings-form" @submit.prevent="saveSettings">
-          <label class="wide"><span>{{ zh.repoPath }}</span><input v-model="form.repoPath"></label>
-          <label><span>{{ zh.aiBase }}</span><input v-model="form.baseUrl" placeholder="https://api.openai.com/v1"></label>
-          <label><span>{{ zh.model }}</span><input v-model="form.model" placeholder="gpt-5.5"></label>
-          <label><span>API Key</span><input v-model="form.apiKey" type="password" placeholder="????????? Key"></label>
-          <label><span>{{ zh.temp }}</span><input v-model="form.temperature" type="number" min="0" max="2" step="0.1"></label>
-          <label class="toggle-row"><input v-model="form.requireConfirmBeforePush" type="checkbox"><span>{{ zh.confirmPush }}</span></label>
-          <div class="form-actions wide"><button class="btn" type="submit">{{ zh.saveSettings }}</button><button class="btn secondary" type="button" @click="loadConfigAndState">{{ zh.reload }}</button></div>
+
+      <section v-if="activeView === 'workflow'" class="panel">
+        <h3>{{ zh.eventLog }}</h3>
+        <ol class="logs">
+          <li v-for="entry in view.logs" :key="entry.time + entry.event">
+            <time>{{ new Date(entry.time).toLocaleTimeString() }}</time>
+            <code>{{ entry.event }}: {{ JSON.stringify(entry.data) }}</code>
+          </li>
+        </ol>
+      </section>
+
+      <section v-if="activeView === 'settings'" class="settings-page">
+        <nav class="settings-tabs" aria-label="settings sections">
+          <button
+            v-for="tab in settingsTabs"
+            :key="tab.id"
+            type="button"
+            :class="{ active: activeSettingsTab === tab.id }"
+            @click="activeSettingsTab = tab.id"
+          >
+            {{ tab.label }}
+          </button>
+        </nav>
+
+        <form class="settings-card" @submit.prevent="saveSettings">
+          <div class="settings-card-head">
+            <div>
+              <h3>{{ settingsTabs.find((tab) => tab.id === activeSettingsTab)?.label || "通用设置" }}</h3>
+              <p>管理本地提交工具的仓库、AI 与提交工作流。</p>
+            </div>
+            <span class="status-label">{{ view.configState }}</span>
+          </div>
+
+          <div class="settings-card-body">
+            <label v-if="activeSettingsTab === 'general' || activeSettingsTab === 'safety'" class="setting-alert wide">
+              <span>
+                <strong>推送确认门禁</strong>
+                <small>开启后，推送到远端前必须在浏览器内确认。</small>
+              </span>
+              <input v-model="form.requireConfirmBeforePush" type="checkbox">
+            </label>
+
+            <label v-if="activeSettingsTab === 'general' || activeSettingsTab === 'repo'" class="wide"><span>{{ zh.repoPath }}</span><input v-model="form.repoPath" autocomplete="off"></label>
+
+            <div v-if="activeSettingsTab === 'general' || activeSettingsTab === 'ai'" class="settings-section wide">
+              <strong>AI 服务设置</strong>
+              <small>从本机已安装的 AI 中选择提交工作流使用的工具，不需要填写地址、模型或 Key。</small>
+            </div>
+            <div v-if="activeSettingsTab === 'general' || activeSettingsTab === 'ai'" class="ai-picker wide">
+              <button
+                v-for="ai in installedAi"
+                :key="ai.id"
+                type="button"
+                class="ai-option"
+                :class="{ selected: form.selectedAi === ai.id }"
+                @click="form.selectedAi = ai.id"
+              >
+                <span class="ai-mark">{{ ai.label.slice(0, 1) }}</span>
+                <span class="ai-copy">
+                  <strong>{{ ai.label }}</strong>
+                  <small>{{ ai.source }}</small>
+                </span>
+                <span class="ai-state">{{ form.selectedAi === ai.id ? '使用中' : '可用' }}</span>
+              </button>
+              <div v-if="!installedAi.length" class="empty-state wide">没有检测到可用 AI。请先安装 Codex、Claude 或 Gemini CLI。</div>
+            </div>
+
+            <div v-if="activeSettingsTab === 'general' || activeSettingsTab === 'local'" class="settings-section wide">
+              <strong>本地配置文件</strong>
+              <small>{{ zh.saveLocal }}</small>
+            </div>
+          </div>
+
+          <div class="settings-actions">
+            <button class="btn secondary" type="button" @click="loadConfigAndState">{{ zh.reload }}</button>
+            <button class="btn" type="submit">{{ zh.saveSettings }}</button>
+          </div>
         </form>
       </section>
-      <section class="panel"><h3>{{ zh.lastOutput }}</h3><pre class="output">{{ view.details }}</pre></section>
+
+      <section v-if="activeView === 'workflow'" class="panel output-panel">
+        <h3>{{ zh.output }}</h3>
+        <pre class="output">{{ view.details }}</pre>
+      </section>
     </main>
   </div>
 </template>

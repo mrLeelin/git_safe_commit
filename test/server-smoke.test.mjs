@@ -47,9 +47,22 @@ test("server exposes health, config, and inspect action", async () => {
     repoPath: repo,
     server: { host: "127.0.0.1", port },
     ai: {
+      activeProvider: "codex",
       baseUrl: "https://example.test/v1",
       apiKey: "local-test-secret",
-      model: "model-a"
+      model: "model-a",
+      providers: {
+        codex: {
+          baseUrl: "https://example.test/v1",
+          apiKey: "local-test-secret",
+          model: "model-a"
+        },
+        claude: {
+          baseUrl: "https://claude.example/v1",
+          apiKey: "claude-test-secret",
+          model: "claude-a"
+        }
+      }
     }
   }), "utf8");
 
@@ -78,7 +91,15 @@ test("server exposes health, config, and inspect action", async () => {
     const configResponse = await fetch(`${baseUrl}/api/config`);
     const config = await configResponse.json();
     assert.equal(config.ok, true);
+    assert.equal(config.config.ai.selected, "codex");
     assert.equal(JSON.stringify(config).includes("local-test-secret"), false);
+    assert.equal(JSON.stringify(config).includes("claude-test-secret"), false);
+
+    const installationsResponse = await fetch(`${baseUrl}/api/ai/installations`);
+    const installations = await installationsResponse.json();
+    assert.equal(installations.ok, true);
+    assert.equal(installations.selected, "codex");
+    assert.ok(Array.isArray(installations.installations));
 
     const saveResponse = await fetch(`${baseUrl}/api/config`, {
       method: "POST",
@@ -87,18 +108,28 @@ test("server exposes health, config, and inspect action", async () => {
         config: {
           repoPath: repo,
           ai: {
-            baseUrl: "https://updated.example/v1",
-            model: "model-b",
-            apiKey: ""
+            selected: "claude",
+            activeProvider: "claude"
           }
         }
       })
     });
     const saved = await saveResponse.json();
     assert.equal(saved.ok, true);
-    assert.equal(saved.config.ai.baseUrl, "https://updated.example/v1");
-    assert.equal(saved.config.ai.model, "model-b");
+    assert.equal(saved.config.ai.selected, "claude");
+    assert.equal(saved.config.ai.activeProvider, "claude");
+    assert.equal(saved.config.ai.baseUrl, "https://claude.example/v1");
+    assert.equal(saved.config.ai.model, "claude-a");
+    assert.equal(saved.config.ai.providers.claude.baseUrl, "https://claude.example/v1");
     assert.equal(JSON.stringify(saved).includes("local-test-secret"), false);
+    assert.equal(JSON.stringify(saved).includes("claude-test-secret"), false);
+
+    const rereadResponse = await fetch(`${baseUrl}/api/config`);
+    const reread = await rereadResponse.json();
+    assert.equal(reread.config.ai.selected, "claude");
+    assert.equal(reread.config.ai.activeProvider, "claude");
+    assert.equal(reread.config.ai.baseUrl, "https://claude.example/v1");
+    assert.equal(reread.config.ai.providers.claude.baseUrl, "https://claude.example/v1");
 
     const inspectResponse = await fetch(`${baseUrl}/api/action/inspect`, { method: "POST" });
     const inspect = await inspectResponse.json();
