@@ -28,7 +28,7 @@ const zh = {
   fetchRemote: "获取远端",
   aiCommit: "提交选中文件",
   aiSync: "同步远端",
-  aiPush: "推送到远端",
+  aiPush: "直接推送到远端",
   repo: "仓库",
   branch: "分支",
   upstream: "上游",

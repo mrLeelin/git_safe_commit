@@ -26,7 +26,6 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(app, /aiCommit: "提交选中文件"/);
   assert.match(app, /commitQueue: "提交队列"/);
   assert.match(app, /commitMessage: "提交说明"/);
-  assert.match(app, /pushConfirm: "我确认这次推送只包含当前分支上已经完成的提交"/);
   assert.match(app, /forbidPull: "禁止 git pull"/);
   assert.match(app, /forbidReset: "禁止 reset --hard"/);
 
@@ -101,7 +100,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.doesNotMatch(app, /runAction\("ai-commit", payload\)/);
   assert.match(workflowView, /commitResetKey/);
   assert.match(app, /commitResetKey\.value \+= 1/);
-  assert.match(workflowView, /emit\("push", \{ confirmed: pushConfirmed\.value \}\)/);
+  assert.match(workflowView, /emit\("push", \{ confirmed: true \}\)/);
   assert.match(workflowView, /@click="emit\('action', 'fetch'\)"/);
   assert.match(app, /fetch: zh\.fetchRemote/);
   assert.match(app, /action === "fetch"/);

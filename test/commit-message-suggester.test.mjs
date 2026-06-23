@@ -176,3 +176,38 @@ test("suggestCommitMessage preserves tagged multiline commit messages from noisy
 
   assert.equal(result.message, "[Style] -- 更新推送拉取按钮标签文案\n        -- 调整操作区按钮显示名称");
 });
+
+test("suggestCommitMessage aligns continuation markers with each tagged line", async () => {
+  const result = await suggestCommitMessage({
+    config: { repoPath: "C:\\repo", ai: { selected: "codex" } },
+    paths: ["src/App.vue"],
+    detectInstalledAi: () => [{
+      id: "codex",
+      label: "Codex",
+      command: "codex",
+      source: "codex"
+    }],
+    runGit: async (_repoPath, args) => {
+      if (args[0] === "diff" && args[1] === "--cached") return { stdout: "" };
+      if (args[0] === "diff") return { stdout: "diff --git a/src/App.vue b/src/App.vue\n+fetch button\n" };
+      throw new Error(`unexpected git args: ${args.join(" ")}`);
+    },
+    runProcess: async () => ({
+      ok: true,
+      stdout: [
+        "[Feature] -- 增加获取远端按钮",
+        "-- 刷新仓库状态和提交树",
+        "[FixBug] [Assets] -- 修复资源按钮显示",
+        " -- 保留提交说明标签"
+      ].join("\n"),
+      stderr: ""
+    })
+  });
+
+  assert.equal(result.message, [
+    "[Feature] -- 增加获取远端按钮",
+    "          -- 刷新仓库状态和提交树",
+    "[FixBug] [Assets] -- 修复资源按钮显示",
+    "                  -- 保留提交说明标签"
+  ].join("\n"));
+});
