@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { detectInstalledAi } from "./lib/ai-installations.mjs";
 import { suggestCommitMessage } from "./lib/commit-message-suggester.mjs";
 import { defaultConfigPath, loadConfig, maskConfig, saveConfig } from "./lib/config.mjs";
-import { getGitGraph } from "./lib/git-graph.mjs";
+import { getGitGraph, getCommitDetail } from "./lib/git-graph.mjs";
 import { createWorkflowRunner } from "./lib/workflow-runner.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -56,6 +56,15 @@ app.get("/api/git/graph", async (_req, res, next) => {
   try {
     const graph = await getGitGraph(config.repoPath);
     res.json(graph);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/git/commit/:hash", async (req, res, next) => {
+  try {
+    const detail = await getCommitDetail(config.repoPath, req.params.hash);
+    res.json(detail);
   } catch (error) {
     next(error);
   }

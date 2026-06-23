@@ -25,6 +25,7 @@ const zh = {
   workflow: "提交工作流",
   inspectRepo: "检查仓库",
   createRecovery: "创建恢复点",
+  fetchRemote: "获取远端",
   aiCommit: "提交选中文件",
   aiSync: "同步远端",
   aiPush: "推送到远端",
@@ -202,7 +203,7 @@ async function runAction(action, payload = {}) {
     if (result.status || result.summary) view.result = { status: result.status, summary: result.summary };
     view.details = JSON.stringify(result, null, 2);
     log("操作完成", { action: labelAction(action) });
-    if (action === "inspect" || action === "create-recovery" || action === "commit" || action.startsWith("ai-")) {
+    if (action === "inspect" || action === "create-recovery" || action === "fetch" || action === "commit" || action.startsWith("ai-")) {
       await Promise.all([loadConfigAndState(), loadGraph()]);
       if (action === "commit" || action === "ai-commit") commitResetKey.value += 1;
     }
@@ -286,6 +287,7 @@ function labelAction(action) {
   return ({
     inspect: zh.inspectRepo,
     "create-recovery": zh.createRecovery,
+    fetch: zh.fetchRemote,
     commit: zh.aiCommit,
     "ai-commit": zh.aiCommit,
     "ai-sync": zh.aiSync,

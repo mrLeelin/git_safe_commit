@@ -65,6 +65,38 @@ test("workflow runner commits selected files directly without AI", async () => {
   assert.match(git(repo, ["show", "--name-only", "--pretty=", "HEAD"]).trim(), /^tracked\.txt$/);
 });
 
+test("workflow runner fetches remote refs directly without AI and refreshes status", async () => {
+  const repo = await createRepo();
+  const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-remote-"));
+  git(remote, ["init", "--bare", "-b", "main"]);
+  git(repo, ["remote", "add", "origin", remote]);
+  git(repo, ["push", "-u", "origin", "main"]);
+  git(repo, ["update-ref", "-d", "refs/remotes/origin/main"]);
+  let fetchCalled = false;
+  const events = [];
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    },
+    emit: (event, data) => events.push({ event, data }),
+    fetchImpl: async () => {
+      fetchCalled = true;
+      throw new Error("AI should not be called for direct fetch");
+    }
+  });
+
+  const result = await runner.run("fetch", {});
+
+  assert.equal(result.ok, true);
+  assert.equal(fetchCalled, false);
+  assert.equal(result.status.branch, "main");
+  assert.equal(result.summary.branch, "main");
+  assert.match(git(repo, ["rev-parse", "--verify", "refs/remotes/origin/main"]).trim(), /^[0-9a-f]{40}$/);
+  assert.deepEqual(events.map((item) => item.data.phase), ["Fetching", "Idle"]);
+});
+
 test("workflow runner accepts ai-commit payload and exposes commit tools", async () => {
   const repo = await createRepo();
   await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");

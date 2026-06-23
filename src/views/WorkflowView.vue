@@ -286,6 +286,7 @@ async function ensureCommitMessage({ force = false } = {}) {
       <p class="next-copy">{{ nextStep }}</p>
       <div class="action-stack">
         <button class="btn secondary" type="button" :disabled="Boolean(busy)" @click="emit('action', 'create-recovery')">{{ labels.createRecovery }}</button>
+        <button class="btn secondary" type="button" :disabled="Boolean(busy)" @click="emit('action', 'fetch')">{{ labels.fetchRemote }}</button>
         <button class="btn secondary" type="button" :disabled="Boolean(busy)" @click="emit('action', 'ai-sync')">{{ labels.aiSync }}</button>
         <label class="push-confirm"><input v-model="pushConfirmed" type="checkbox">{{ labels.pushConfirm }}</label>
         <button class="btn danger" type="button" :disabled="!canPush" @click="runPush">{{ labels.aiPush }}</button>

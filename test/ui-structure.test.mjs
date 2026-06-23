@@ -22,6 +22,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
 
   assert.match(app, /const zh = \{/);
   assert.match(app, /title: "Git 安全提交"/);
+  assert.match(app, /fetchRemote: "获取远端"/);
   assert.match(app, /aiCommit: "提交选中文件"/);
   assert.match(app, /commitQueue: "提交队列"/);
   assert.match(app, /commitMessage: "提交说明"/);
@@ -101,6 +102,9 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /commitResetKey/);
   assert.match(app, /commitResetKey\.value \+= 1/);
   assert.match(workflowView, /emit\("push", \{ confirmed: pushConfirmed\.value \}\)/);
+  assert.match(workflowView, /@click="emit\('action', 'fetch'\)"/);
+  assert.match(app, /fetch: zh\.fetchRemote/);
+  assert.match(app, /action === "fetch"/);
   assert.match(workflowView, /selectSection\('staged'\)/);
   assert.match(workflowView, /selectSection\('unstaged'\)/);
   assert.match(workflowView, /selectSection\('untracked'\)/);

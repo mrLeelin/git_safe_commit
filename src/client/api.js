@@ -16,6 +16,10 @@ export async function loadGraph() {
   return request("/api/git/graph");
 }
 
+export async function loadCommitDetail(hash) {
+  return request(`/api/git/commit/${encodeURIComponent(hash)}`);
+}
+
 export async function runAction(action, payload = {}) {
   return request(`/api/action/${action}`, { method: "POST", body: JSON.stringify(payload) });
 }

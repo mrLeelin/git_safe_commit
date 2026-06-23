@@ -104,7 +104,11 @@
   color: var(--ink);
   font-size: 12px;
   line-height: 1;
+  cursor: pointer;
+  transition: background .12s ease;
 }
+.commit-row:hover { background: #eff6ff; }
+.commit-row.selected { background: #dbeafe; }
 .commit-row:nth-child(even) { background: #f8fafc; }
 .commit-row.head { background: #2f73d5; color: #fff; }
 .commit-lanes { position: relative; height: 24px; }
@@ -304,3 +308,140 @@
 .theme-dark .commit-date {
   color: #cbd5e1;
 }
+
+.git-graph-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 0;
+  min-height: calc(100vh - 178px);
+}
+.git-graph-layout .git-graph-list {
+  height: auto;
+  min-height: 0;
+}
+.commit-detail-panel {
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  background: var(--panel);
+  color: var(--ink);
+  overflow-y: auto;
+  padding: 0;
+}
+.detail-section {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.detail-section:last-child { border-bottom: 0; }
+.detail-section h4 {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+}
+.detail-row {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 8px;
+  align-items: start;
+  margin-bottom: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.detail-label {
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 12px;
+}
+.detail-ref {
+  display: inline-block;
+  border: 1px solid #f0a000;
+  border-radius: 3px;
+  padding: 0 5px;
+  margin-right: 4px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 11px;
+  font-weight: 800;
+}
+.detail-sha, .detail-parent {
+  font-size: 12px;
+  word-break: break-all;
+}
+.detail-subject {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.5;
+}
+.detail-body {
+  margin: 8px 0 0;
+  font: 12px/1.6 Consolas, "Cascadia Mono", "Microsoft YaHei", monospace;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.detail-files { display: grid; gap: 4px; }
+.detail-file {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.detail-file:nth-child(odd) { background: var(--soft); }
+.file-status {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 900;
+  color: #fff;
+}
+.file-status.add { background: #16a34a; }
+.file-status.del { background: #dc2626; }
+.file-status.mod { background: #2563eb; }
+.file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: 12px;
+}
+.file-status-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+.detail-empty {
+  display: grid;
+  place-items: center;
+  min-height: 200px;
+  text-align: center;
+}
+
+.theme-dark .commit-row:hover { background: #1a2d47; }
+.theme-dark .commit-row.selected { background: #1e3a5f; }
+.theme-dark .commit-detail-panel {
+  border-color: #26374d;
+  background: #111c2c;
+  color: #e5edf7;
+}
+.theme-dark .detail-section { border-bottom-color: #26374d; }
+.theme-dark .detail-label { color: #93a4b7; }
+.theme-dark .detail-ref {
+  border-color: #92400e;
+  background: #451a03;
+  color: #fbbf24;
+}
+.theme-dark .detail-subject { color: #f8fafc; }
+.theme-dark .detail-body { color: #93a4b7; }
+.theme-dark .file-path { color: #e5edf7; }
+.theme-dark .detail-file:nth-child(odd) { background: #0d1625; }
