@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { defaultConfigPath, loadConfig, maskConfig, saveConfig } from "./lib/config.mjs";
 import { detectInstalledAi } from "./lib/ai-installations.mjs";
 import { runGit, pathInsideRepo } from "./lib/git-executor.mjs";
+import { getGitGraph } from "./lib/git-graph.mjs";
 import { createWorkflowRunner } from "./lib/workflow-runner.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -53,33 +54,8 @@ app.get("/api/state", (_req, res) => {
 
 app.get("/api/git/graph", async (_req, res, next) => {
   try {
-    const graphResult = await runGit(config.repoPath, [
-      "log",
-      "--graph",
-      "--topo-order",
-      "--decorate",
-      "--oneline",
-      "--all",
-      "-n",
-      "60"
-    ]);
-    const commitResult = await runGit(config.repoPath, [
-      "log",
-      "--all",
-      "--topo-order",
-      "--decorate=short",
-      "--date=short",
-      "--pretty=format:%H%x1f%h%x1f%P%x1f%D%x1f%an%x1f%s%x1f%ad",
-      "-n",
-      "80"
-    ]);
-    res.json({
-      ok: true,
-      graph: graphResult.stdout.split(/\r?\n/).filter(Boolean),
-      commits: parseCommitGraph(commitResult.stdout),
-      command: graphResult.command,
-      stderr: graphResult.stderr || commitResult.stderr
-    });
+    const graph = await getGitGraph(config.repoPath);
+    res.json(graph);
   } catch (error) {
     next(error);
   }
@@ -221,37 +197,3 @@ function writeEvent(res, event, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-function parseCommitGraph(stdout) {
-  return stdout.split(/\r?\n/).filter(Boolean).map((line, index) => {
-    const [hash, shortHash, parents, refs, author, subject, date] = line.split("\x1f");
-    const parsedRefs = parseRefs(refs || "");
-    return {
-      hash,
-      shortHash,
-      parents: parents ? parents.split(/\s+/).filter(Boolean) : [],
-      refs: parsedRefs.refs,
-      author,
-      subject,
-      date,
-      lane: index % 4,
-      isHead: Boolean(parsedRefs.current)
-    };
-  });
-}
-
-function parseRefs(refs) {
-  let current = "";
-  const parsed = refs
-    .split(",")
-    .map((ref) => ref.trim())
-    .filter(Boolean)
-    .map((ref) => {
-      const match = /^HEAD -> (.+)$/.exec(ref);
-      if (match) {
-        current = match[1];
-        return current;
-      }
-      return ref.replace(/^origin\//, "origin/");
-    });
-  return { current, refs: [...new Set(parsed)] };
-}
