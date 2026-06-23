@@ -56,6 +56,7 @@ app.get("/api/git/graph", async (_req, res, next) => {
     const graphResult = await runGit(config.repoPath, [
       "log",
       "--graph",
+      "--topo-order",
       "--decorate",
       "--oneline",
       "--all",
@@ -65,6 +66,7 @@ app.get("/api/git/graph", async (_req, res, next) => {
     const commitResult = await runGit(config.repoPath, [
       "log",
       "--all",
+      "--topo-order",
       "--decorate=short",
       "--date=short",
       "--pretty=format:%H%x1f%h%x1f%P%x1f%D%x1f%an%x1f%s%x1f%ad",

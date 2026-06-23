@@ -45,8 +45,8 @@ code { font-family: Consolas, "Cascadia Mono", "Microsoft YaHei", monospace; ove
   top: 0;
   height: 100vh;
   overflow: auto;
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   gap: 16px;
   padding: 20px 16px;
   background: var(--rail);
@@ -150,10 +150,14 @@ h3 { font-size: 15px; margin-bottom: 10px; }
 }
 .setup-row.ok .setup-dot { background: #22c55e; }
 
+.rail-spacer {
+  flex: 1;
+  min-height: 1px;
+}
 .rail-tools {
   display: grid;
+  align-content: end;
   gap: 8px;
-  margin-top: -4px;
   padding: 8px 0 2px;
 }
 .rail-tool {
@@ -722,6 +726,30 @@ textarea {
   background: #d18a00;
   opacity: .96;
 }
+.branchline {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  background: #58b8ff;
+  opacity: .9;
+}
+.merge-join {
+  position: absolute;
+  top: 11px;
+  left: 33px;
+  height: 2px;
+  background: #58b8ff;
+  opacity: .95;
+}
+.branch-split {
+  position: absolute;
+  top: 11px;
+  left: 33px;
+  height: 2px;
+  background: #58b8ff;
+  opacity: .7;
+}
 .node {
   position: absolute;
   top: 8px;
@@ -732,6 +760,14 @@ textarea {
   border-radius: 50%;
   background: #f0a000;
   box-shadow: 0 0 0 1px #f0a000;
+}
+.commit-row.merge .node {
+  background: #ffd166;
+  box-shadow: 0 0 0 1px #ffd166;
+}
+.commit-row.branch-end .node {
+  background: #58b8ff;
+  box-shadow: 0 0 0 1px #58b8ff;
 }
 .commit-main { min-width: 0; padding-right: 8px; }
 .commit-title {

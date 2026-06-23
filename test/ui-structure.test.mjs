@@ -12,6 +12,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   const app = await readFile(path.join(root, "src", "App.vue"), "utf8");
   const css = await readFile(path.join(root, "src", "styles.css"), "utf8");
   const settingsModel = await readFile(path.join(root, "src", "settings-model.js"), "utf8");
+  const graphLayout = await readFile(path.join(root, "src", "graph-layout.js"), "utf8");
 
   assert.match(app, /const zh = \{/);
   assert.match(app, /title: "Git 安全提交"/);
@@ -89,6 +90,19 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(app, /class="commit-row"/);
   assert.match(app, /class="commit-lanes"/);
   assert.match(app, /class="mainline"/);
+  assert.match(app, /graphRows = computed\(\(\) => buildCommitGraphRows\(view\.commits\)\)/);
+  assert.match(app, /v-for="lane in commit\.branchLines"/);
+  assert.match(app, /class="branchline"/);
+  assert.match(app, /v-for="lane in commit\.mergeJoinLanes"/);
+  assert.match(app, /class="merge-join"/);
+  assert.match(app, /v-for="lane in commit\.branchSplitLanes"/);
+  assert.match(app, /class="branch-split"/);
+  assert.match(app, /commit\.nodeLane \* 22/);
+  assert.match(graphLayout, /parents\.slice\(1\)/);
+  assert.match(graphLayout, /findVisibleCommonAncestorIndex/);
+  assert.match(graphLayout, /isMerge:/);
+  assert.match(graphLayout, /showMergeJoin:/);
+  assert.match(graphLayout, /showBranchSplit:/);
   assert.doesNotMatch(app, /v-for="lane in 4"/);
   assert.doesNotMatch(app, /commit\.lane \* 14/);
   assert.match(css, /\.app-shell/);
@@ -121,6 +135,11 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(css, /\.commit-row/);
   assert.match(css, /\.commit-lanes/);
   assert.match(css, /\.mainline/);
+  assert.match(css, /\.branchline/);
+  assert.match(css, /\.merge-join/);
+  assert.match(css, /\.branch-split/);
+  assert.match(css, /\.commit-row\.merge/);
+  assert.match(css, /\.commit-row\.branch-end/);
   assert.doesNotMatch(app, /class="graph-card"/);
   assert.doesNotMatch(app, /class="graph-card-head"/);
   assert.doesNotMatch(css, /\.graph-card/);

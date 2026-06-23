@@ -5,6 +5,7 @@ import {
   createDefaultSettingsForm,
   fillSettingsFormFromConfig
 } from "./settings-model.js";
+import { buildCommitGraphRows } from "./graph-layout.js";
 
 const zh = {
   title: "Git 安全提交",
@@ -109,6 +110,7 @@ const status = computed(() => view.result?.status || null);
 const blockers = computed(() => view.state?.blockers || summary.value?.blockers || []);
 const recovery = computed(() => view.state?.activeRecovery || null);
 const repoName = computed(() => (view.config?.repoPath || "").split(/[\\/]/).filter(Boolean).at(-1) || "未配置仓库");
+const graphRows = computed(() => buildCommitGraphRows(view.commits));
 const installedAi = computed(() => view.aiInstallations || []);
 const selectedAi = computed(() => installedAi.value.find((ai) => ai.id === form.selectedAi) || null);
 const settingsTabs = [
@@ -393,17 +395,6 @@ function publicPayload(payload) {
         </div>
       </div>
 
-      <div class="rail-tools">
-        <button class="rail-tool" type="button" @click="toggleTheme">
-          <span class="rail-tool-icon">{{ themeMode === 'dark' ? 'S' : 'D' }}</span>
-          <strong>{{ themeMode === 'dark' ? '浅色模式' : '暗色模式' }}</strong>
-        </button>
-        <button class="rail-tool" type="button" @click="toggleRail">
-          <span class="rail-tool-icon">{{ railCollapsed ? '>>' : '<<' }}</span>
-          <strong>{{ railCollapsed ? '展开' : '收起' }}</strong>
-        </button>
-      </div>
-
       <nav class="main-nav" aria-label="primary">
         <button type="button" :class="{ active: activeView === 'workflow' }" @click="activeView = 'workflow'">
           <span>1</span><strong>提交工作流</strong>
@@ -415,6 +406,18 @@ function publicPayload(payload) {
           <span>3</span><strong>设置</strong>
         </button>
       </nav>
+
+      <div class="rail-spacer"></div>
+      <div class="rail-tools">
+        <button class="rail-tool" type="button" @click="toggleTheme">
+          <span class="rail-tool-icon">{{ themeMode === 'dark' ? 'S' : 'D' }}</span>
+          <strong>{{ themeMode === 'dark' ? '浅色模式' : '暗色模式' }}</strong>
+        </button>
+        <button class="rail-tool" type="button" @click="toggleRail">
+          <span class="rail-tool-icon">{{ railCollapsed ? '>>' : '<<' }}</span>
+          <strong>{{ railCollapsed ? '展开' : '收起' }}</strong>
+        </button>
+      </div>
     </aside>
 
     <main class="workspace" :class="{ 'settings-workspace': activeView === 'settings' || activeView === 'graph' }">
@@ -546,11 +549,34 @@ function publicPayload(payload) {
           </div>
           <div class="graph-body">
             <div class="graph-sidebar"><span>*</span></div>
-            <div v-if="view.commits.length" class="commit-list">
-              <div v-for="commit in view.commits" :key="commit.hash" class="commit-row" :class="{ head: commit.isHead }">
+            <div v-if="graphRows.length" class="commit-list">
+              <div
+                v-for="commit in graphRows"
+                :key="commit.hash"
+                class="commit-row"
+                :class="{ head: commit.isHead, merge: commit.isMerge, 'branch-end': commit.endsBranch }"
+              >
                 <div class="commit-lanes">
                   <span class="mainline"></span>
-                  <span class="node"></span>
+                  <span
+                    v-for="lane in commit.branchLines"
+                    :key="lane"
+                    class="branchline"
+                    :style="{ left: `${lane * 22 + 32}px` }"
+                  ></span>
+                  <span
+                    v-for="lane in commit.mergeJoinLanes"
+                    :key="`join-${lane}`"
+                    class="merge-join"
+                    :style="{ width: `${lane * 22}px` }"
+                  ></span>
+                  <span
+                    v-for="lane in commit.branchSplitLanes"
+                    :key="`split-${lane}`"
+                    class="branch-split"
+                    :style="{ width: `${lane * 22}px` }"
+                  ></span>
+                  <span class="node" :style="{ left: `${commit.nodeLane * 22 + 29}px` }"></span>
                 </div>
                 <div class="commit-main">
                   <div class="commit-title">

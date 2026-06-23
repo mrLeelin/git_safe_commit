@@ -141,6 +141,7 @@ test("server exposes health, config, and inspect action", async () => {
     assert.equal(graph.ok, true);
     assert.ok(Array.isArray(graph.graph));
     assert.match(graph.graph.join("\n"), /initial/);
+    assert.match(graph.command, /--topo-order/);
 
     const healthAfterInspect = await fetch(`${baseUrl}/api/health`);
     assert.equal(healthAfterInspect.status, 200);
