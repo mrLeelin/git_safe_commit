@@ -32,6 +32,12 @@ test("suggestCommitMessage uses the selected installed AI CLI instead of remote 
   assert.equal(commands[0].file, "codex");
   assert.deepEqual(commands[0].args, ["--ask-for-approval", "never", "exec", "--sandbox", "read-only", "-"]);
   assert.match(commands[0].options.input, /diff --git/);
+  assert.match(commands[0].options.input, /\[FixBug\]/);
+  assert.match(commands[0].options.input, /\[Feature\]/);
+  assert.match(commands[0].options.input, /\[Assets\]/);
+  assert.match(commands[0].options.input, /\[FixBug\] -- 修复提交按钮无法提交/);
+  assert.match(commands[0].options.input, /\s+-- 补充直接提交回归测试/);
+  assert.match(commands[0].options.input, /\[FixBug\] \[Assets\] -- 修复资源加载异常/);
 });
 
 test("suggestCommitMessage returns a structured error when selected AI is unavailable", async () => {

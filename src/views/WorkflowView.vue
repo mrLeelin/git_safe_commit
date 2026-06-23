@@ -38,7 +38,6 @@ const commitBlockReason = computed(() => {
   if (!props.summary) return "先检查仓库";
   if (props.blockers.length) return "存在阻断项";
   if (!selectedPaths.value.length) return "先选择文件";
-  if (!commitMessage.value.trim()) return "先填写提交说明";
   return "";
 });
 
@@ -79,13 +78,20 @@ function clearSelection() {
   selectedPaths.value = [];
 }
 
-function runCommit() {
+async function runCommit() {
   if (commitBlockReason.value) {
     alert(commitBlockReason.value);
     emit("blocked", commitBlockReason.value);
     return;
   }
-  emit("commit", { paths: selectedPaths.value, message: commitMessage.value.trim() });
+  const message = await ensureCommitMessage();
+  if (!message) {
+    const reason = "AI 未能生成提交说明，请手动填写后再提交";
+    alert(reason);
+    emit("blocked", reason);
+    return;
+  }
+  emit("commit", { paths: selectedPaths.value, message });
 }
 
 function runPush() {
@@ -99,12 +105,19 @@ function runPush() {
 
 async function suggestMessage() {
   if (!selectedPaths.value.length) return;
+  await ensureCommitMessage({ force: true });
+}
+
+async function ensureCommitMessage({ force = false } = {}) {
+  const existingMessage = commitMessage.value.trim();
+  if (existingMessage && !force) return existingMessage;
   suggestingMessage.value = true;
   try {
     const message = await new Promise((resolve) => {
       emit("suggest-message", selectedPaths.value, resolve);
     });
-    if (message) commitMessage.value = message;
+    if (message) commitMessage.value = message.trim();
+    return commitMessage.value.trim();
   } finally {
     suggestingMessage.value = false;
   }
@@ -154,7 +167,6 @@ async function suggestMessage() {
         <button class="text-button" type="button" @click="selectSection('unstaged')">只选未暂存</button>
         <button class="text-button" type="button" @click="clearSelection">清空选择</button>
         <button class="text-button" type="button" @click="emit('action', 'inspect')">{{ labels.refresh }}</button>
-        <button class="text-button suggest" type="button" :disabled="suggestingMessage || !selectedPaths.length" @click="suggestMessage">{{ suggestingMessage ? '生成中...' : 'AI 生成说明' }}</button>
       </div>
 
       <div class="queue-list">
@@ -178,6 +190,7 @@ async function suggestMessage() {
       </div>
 
       <div class="commit-actions">
+        <button class="btn secondary suggest" type="button" :disabled="suggestingMessage || !selectedPaths.length" @click="suggestMessage">{{ suggestingMessage ? '生成中...' : 'AI 生成说明' }}</button>
         <button class="btn" type="button" :disabled="!canCommit" @click="runCommit">{{ labels.aiCommit }}</button>
         <span class="disabled-reason">{{ commitBlockReason || "将按选中路径提交" }}</span>
       </div>

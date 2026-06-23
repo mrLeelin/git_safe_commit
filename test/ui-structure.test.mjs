@@ -91,7 +91,11 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /class="disabled-reason"/);
   assert.match(workflowView, /emit\("commit"/);
   assert.match(workflowView, /paths: selectedPaths\.value/);
-  assert.match(workflowView, /message: commitMessage\.value\.trim\(\)/);
+  assert.match(workflowView, /async function ensureCommitMessage/);
+  assert.match(workflowView, /const message = await ensureCommitMessage\(\)/);
+  assert.match(workflowView, /emit\("commit", \{ paths: selectedPaths\.value, message \}\)/);
+  assert.doesNotMatch(workflowView, /if \(!commitMessage\.value\.trim\(\)\) return/);
+  assert.match(workflowView, /class="commit-actions"[\s\S]*@click="suggestMessage"[\s\S]*@click="runCommit"/);
   assert.match(app, /runAction\("commit", payload\)/);
   assert.doesNotMatch(app, /runAction\("ai-commit", payload\)/);
   assert.match(workflowView, /commitResetKey/);
