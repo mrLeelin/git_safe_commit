@@ -110,6 +110,8 @@ const themeMode = ref("dark");
 const railCollapsed = ref(false);
 const commitResetKey = ref(0);
 const conflictCandidates = ref({});
+const operationNotice = ref(null);
+const pushSuccessActions = new Set(["push", "ai-push", "continue-rebase-and-push"]);
 const repositoryChangingActions = new Set([
   "inspect",
   "create-recovery",
@@ -250,12 +252,14 @@ async function refreshRepositoryView({ inspect = false } = {}) {
 
 async function runAction(action, payload = {}) {
   view.busy = action;
+  if (pushSuccessActions.has(action)) clearOperationNotice();
   log("界面操作", { action: labelAction(action), payload: publicPayload(payload) });
   try {
     const result = await runActionApi(action, payload);
     if (result.status || result.summary) view.result = { status: result.status, summary: result.summary };
     view.details = JSON.stringify(result, null, 2);
     log("操作完成", { action: labelAction(action), message: result.message || "" });
+    showOperationNotice(action, result);
     if (repositoryChangingActions.has(action)) {
       await refreshRepositoryView();
       if (action === "commit" || action === "ai-commit") commitResetKey.value += 1;
@@ -285,6 +289,20 @@ function toggleRail() {
 
 function setDetails(message) {
   view.details = message;
+}
+
+function showOperationNotice(action, result = {}) {
+  if (!pushSuccessActions.has(action) || result?.ok === false) return;
+  const branch = result.summary?.branch || summary.value?.branch || "";
+  operationNotice.value = {
+    tone: "success",
+    title: action === "continue-rebase-and-push" ? "变基已继续并推送成功" : "推送成功",
+    message: branch ? `分支 ${branch} 已经推送到远端。` : "远端已经收到当前分支的提交。"
+  };
+}
+
+function clearOperationNotice() {
+  operationNotice.value = null;
 }
 
 function rememberConflictCandidate(payload) {
@@ -489,7 +507,8 @@ function labelAction(action) {
     push: zh.aiPush,
     "ai-commit": zh.aiCommit,
     "ai-sync": zh.aiSync,
-    "ai-push": zh.aiPush
+    "ai-push": zh.aiPush,
+    "continue-rebase-and-push": "继续变基并推送"
   })[action] || action;
 }
 
@@ -533,9 +552,11 @@ function publicPayload(payload) {
           :details="view.details"
           :busy="view.busy"
           :commit-reset-key="commitResetKey"
+          :operation-notice="operationNotice"
           :readiness="readiness"
           :next-step="nextStep"
           @action="runAction"
+          @clear-operation-notice="clearOperationNotice"
           @commit="runCommit"
           @load-text-conflict="loadTextConflict"
           @write-text-candidate="writeTextCandidate"

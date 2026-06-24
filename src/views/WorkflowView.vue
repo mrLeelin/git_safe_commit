@@ -26,11 +26,12 @@ const props = defineProps({
   recovery: { type: Object, default: null },
   busy: { type: String, default: "" },
   commitResetKey: { type: Number, default: 0 },
+  operationNotice: { type: Object, default: null },
   readiness: { type: Object, required: true },
   nextStep: { type: String, default: "" }
 });
 
-const emit = defineEmits(["action", "commit", "load-text-conflict", "write-text-candidate", "load-table-conflict", "write-table-candidate", "load-binary-conflict", "write-binary-candidate", "apply-candidate", "open-repo-file", "export-binary-conflict", "candidate-created", "suggest-message", "blocked"]);
+const emit = defineEmits(["action", "commit", "load-text-conflict", "write-text-candidate", "load-table-conflict", "write-table-candidate", "load-binary-conflict", "write-binary-candidate", "apply-candidate", "open-repo-file", "export-binary-conflict", "candidate-created", "suggest-message", "blocked", "clear-operation-notice"]);
 
 const selectedPaths = ref([]);
 const commitMessage = ref("");
@@ -846,6 +847,14 @@ async function ensureCommitMessage({ force = false } = {}) {
       <button class="mini-command danger" type="button" :disabled="!canPush" @click="runPush">{{ labels.aiPush }}</button>
     </div>
   </header>
+
+  <div v-if="operationNotice" class="operation-notice" :class="operationNotice.tone" role="status">
+    <div>
+      <strong>{{ operationNotice.title }}</strong>
+      <span>{{ operationNotice.message }}</span>
+    </div>
+    <button type="button" aria-label="关闭操作提示" @click='emit("clear-operation-notice")'>关闭</button>
+  </div>
 
   <section class="status-metrics">
     <div class="metric" :class="readiness.tone"><span>{{ labels.safety }}</span><strong>{{ readiness.label }}</strong></div>

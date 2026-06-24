@@ -333,6 +333,43 @@ h3 { font-size: 15px; margin-bottom: 10px; }
 }
 .mini-command:disabled { opacity: .5; }
 
+.operation-notice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  color: var(--ink);
+}
+.operation-notice.success {
+  border-color: #86efac;
+  background: #ecfdf5;
+  color: #065f46;
+}
+.operation-notice strong {
+  display: block;
+  font-size: 14px;
+}
+.operation-notice span {
+  display: block;
+  margin-top: 2px;
+  color: #047857;
+  font-size: 12px;
+}
+.operation-notice button {
+  min-height: 32px;
+  border: 1px solid rgba(4, 120, 87, .24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .74);
+  color: #047857;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .status-metrics {
   display: grid;
   grid-template-columns: 1.25fr 1fr 1fr 1fr;
@@ -2196,6 +2233,10 @@ textarea {
 
 .theme-dark {
   color-scheme: dark;
+}
+.theme-dark .workspace {
+  background: #020817;
+  color: #e5edf7;
 }
 .theme-dark .topbar:not(.settings-topbar) {
   border-bottom-color: #243246;
