@@ -146,6 +146,11 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /emit\("action", "continue-rebase-and-push", \{ confirmed: true \}\)/);
   assert.match(workflowView, /emit\("action", "sync"\)/);
   assert.doesNotMatch(workflowView, /emit\("action", "ai-sync"\)/);
+  assert.match(app, /const repositoryChangingActions = new Set/);
+  assert.match(app, /repositoryChangingActions\.has\(action\)/);
+  assert.match(app, /async function refreshRepositoryView/);
+  assert.match(app, /await refreshRepositoryView\(\{ inspect: true \}\)/);
+  assert.match(app, /catch \(error\)[\s\S]*refreshRepositoryView\(\{ inspect: true \}\)/);
   assert.match(workflowView, /const rebaseInProgress = computed/);
   assert.match(workflowView, /继续变基并推送/);
   assert.match(workflowView, /rebaseInProgress\.value/);
@@ -154,7 +159,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /function openTableWorkbench\(path\)/);
   assert.match(workflowView, /function openBinaryWorkbench\(path\)/);
   assert.match(workflowView, /csv\|tsv\|xlsx/);
-  assert.match(app, /action === "sync"/);
+  assert.match(app, /"sync"/);
   assert.match(app, /loadConfigAndState\(\), loadGraph\(\)/);
   assert.match(workflowView, /function saveTextCandidate\(\)/);
   assert.match(workflowView, /function saveTableCandidate\(\)/);
@@ -223,9 +228,13 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /class="table-choice-option both"/);
   assert.match(workflowView, /class="table-choice-option none"/);
   assert.match(workflowView, /class="table-choice-segment"/);
+  assert.match(workflowView, /<div[^>]*class="table-value-card ours"[^>]*@click="setTableChoice\(selectedTableConflict\.row, selectedTableConflict\.column, 'ours'\)"/);
+  assert.match(workflowView, /<div[^>]*class="table-value-card theirs"[^>]*@click="setTableChoice\(selectedTableConflict\.row, selectedTableConflict\.column, 'theirs'\)"/);
   assert.match(workflowView, /class="table-output-mode"/);
   assert.match(workflowView, /v-if="selectedTableConflict\.choice === 'both'"/);
   assert.match(workflowView, /tableBothStrategy/);
+  assert.match(workflowView, /const candidateContent = composeTableDraft\(tableMerge\.value, \{ bothStrategy: tableBothStrategy\.value \}\)/);
+  assert.match(workflowView, /rowIndex === 0 \? 'HEADER' : `R\$\{rowIndex \+ 1\}`/);
   assert.match(workflowView, /class="table-row-bulk"/);
   assert.match(workflowView, /applySelectedTableRowChoice/);
   assert.doesNotMatch(workflowView, /整行 BOTH/);
@@ -254,6 +263,9 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(css, /\.conflict-row\.candidate-missing/);
   assert.match(css, /\.candidate-ready-pill/);
   assert.match(css, /\.candidate-missing-pill/);
+  assert.match(workflowView, /class="text-button open-workbench-btn"/);
+  assert.match(css, /\.conflict-actions \.open-workbench-btn/);
+  assert.match(css, /\.theme-dark \.conflict-actions \.open-workbench-btn/);
   assert.doesNotMatch(css, /\.conflict-box\.has-candidates/);
   assert.match(css, /\.code-highlight/);
   assert.match(css, /\.candidate-highlight/);
@@ -298,7 +310,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(css, /\.text-choice-btn\.theirs/);
   assert.match(workflowView, /@click="emit\('action', 'fetch'\)"/);
   assert.match(app, /fetch: zh\.fetchRemote/);
-  assert.match(app, /action === "fetch"/);
+  assert.match(app, /"fetch"/);
   assert.match(workflowView, /selectSection\('staged'\)/);
   assert.match(workflowView, /selectSection\('unstaged'\)/);
   assert.match(workflowView, /selectSection\('untracked'\)/);

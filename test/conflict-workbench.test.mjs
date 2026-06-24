@@ -72,6 +72,39 @@ async function createSpreadsheetConflictRepo() {
   return repo;
 }
 
+async function createSparseSpreadsheetConflictRepo() {
+  const repo = await mkdtemp(path.join(os.tmpdir(), "gsc-sparse-xlsx-conflict-workbench-"));
+  git(repo, ["init", "-b", "main"]);
+  git(repo, ["config", "user.email", "tool@example.test"]);
+  git(repo, ["config", "user.name", "Tool Test"]);
+  await writeWorkbook(path.join(repo, "data.xlsx"), [
+    ["id", "name"],
+    [0, "line\nbreak"],
+    [],
+    [1, "Alice"]
+  ]);
+  git(repo, ["add", "."]);
+  git(repo, ["commit", "-m", "initial"]);
+  git(repo, ["switch", "-c", "feature"]);
+  await writeWorkbook(path.join(repo, "data.xlsx"), [
+    ["id", "name"],
+    [0, "line\nbreak"],
+    [],
+    [1, "Ally"]
+  ]);
+  git(repo, ["commit", "-am", "feature edit"]);
+  git(repo, ["switch", "main"]);
+  await writeWorkbook(path.join(repo, "data.xlsx"), [
+    ["id", "name"],
+    [0, "line\nbreak"],
+    [],
+    [1, "Alicia"]
+  ]);
+  git(repo, ["commit", "-am", "main edit"]);
+  assert.throws(() => git(repo, ["merge", "feature"]));
+  return repo;
+}
+
 test("text conflict workbench loads stages and writes a candidate without staging", async () => {
   const repo = await createConflictRepo();
 
@@ -197,6 +230,31 @@ test("table conflict workbench loads XLSX stages and writes an XLSX candidate wi
   assert.equal(sheet.getCell("B2").font.color.argb, "FFFFFFFF");
   assert.deepEqual(sheet.getCell("C2").value, { formula: "5+6", result: 11 });
   assert.match(git(repo, ["status", "--short"]), /^UU data\.xlsx/m);
+});
+
+test("table conflict workbench preserves XLSX row numbers when blank rows exist", async () => {
+  const repo = await createSparseSpreadsheetConflictRepo();
+
+  const loaded = await loadTableConflict({ repoPath: repo, filePath: "data.xlsx" });
+  const conflict = loaded.tableConflict.merge.cells[3][1];
+  conflict.choice = "theirs";
+  const candidate = await writeTableCandidate({
+    repoPath: repo,
+    filePath: "data.xlsx",
+    content: "id,name\n0,\"line\nbreak\"\n,\n1,Ally\n",
+    source: "table",
+    cellChoices: [{ row: 3, column: 1, label: "B4", choice: "theirs" }]
+  });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await readFile(path.join(repo, candidate.tableCandidate.candidate)));
+  const sheet = workbook.worksheets[0];
+
+  assert.equal(conflict.label, "B4");
+  assert.equal(conflict.ours, "Alicia");
+  assert.equal(conflict.theirs, "Ally");
+  assert.equal(sheet.getCell("B2").value, "line\nbreak");
+  assert.equal(sheet.getCell("B3").value, null);
+  assert.equal(sheet.getCell("B4").value, "Ally");
 });
 
 test("binary conflict workbench exports ours and theirs without resolving", async () => {

@@ -110,6 +110,19 @@ const themeMode = ref("dark");
 const railCollapsed = ref(false);
 const commitResetKey = ref(0);
 const conflictCandidates = ref({});
+const repositoryChangingActions = new Set([
+  "inspect",
+  "create-recovery",
+  "fetch",
+  "sync",
+  "push",
+  "resolve-conflict",
+  "commit",
+  "continue-rebase-and-push",
+  "ai-commit",
+  "ai-sync",
+  "ai-push"
+]);
 const view = reactive({
   config: null,
   state: null,
@@ -225,6 +238,16 @@ async function loadGraph() {
   }
 }
 
+async function refreshRepositoryView({ inspect = false } = {}) {
+  const tasks = [loadConfigAndState(), loadGraph()];
+  if (inspect && view.config?.repoPath) {
+    tasks.push(runActionApi("inspect").then((result) => {
+      if (result.status || result.summary) view.result = { status: result.status, summary: result.summary };
+    }));
+  }
+  await Promise.all(tasks);
+}
+
 async function runAction(action, payload = {}) {
   view.busy = action;
   log("界面操作", { action: labelAction(action), payload: publicPayload(payload) });
@@ -233,13 +256,20 @@ async function runAction(action, payload = {}) {
     if (result.status || result.summary) view.result = { status: result.status, summary: result.summary };
     view.details = JSON.stringify(result, null, 2);
     log("操作完成", { action: labelAction(action) });
-    if (action === "inspect" || action === "create-recovery" || action === "fetch" || action === "sync" || action === "push" || action === "resolve-conflict" || action === "commit" || action === "continue-rebase-and-push" || action.startsWith("ai-")) {
-      await Promise.all([loadConfigAndState(), loadGraph()]);
+    if (repositoryChangingActions.has(action)) {
+      await refreshRepositoryView();
       if (action === "commit" || action === "ai-commit") commitResetKey.value += 1;
     }
   } catch (error) {
     view.details = `错误\n${error.message}`;
     log("操作失败", { action: labelAction(action), message: error.message });
+    if (repositoryChangingActions.has(action)) {
+      try {
+        await refreshRepositoryView({ inspect: true });
+      } catch (refreshError) {
+        log("刷新失败", { action: labelAction(action), message: refreshError.message });
+      }
+    }
   } finally {
     view.busy = "";
   }

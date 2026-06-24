@@ -467,11 +467,13 @@ function setTableChoice(rowIndex, columnIndex, choice) {
   if (!cell || cell.kind !== "conflict") return;
   cell.choice = choice;
   selectedTableCellId.value = cell.id;
+  tableRowBulkChoice.value = choice;
   refreshTableCandidate();
 }
 
 function selectTableConflict(cell) {
   selectedTableCellId.value = cell?.id || "";
+  if (isTableChoice(cell?.choice)) tableRowBulkChoice.value = cell.choice;
 }
 
 function setTableRowChoice(rowIndex, choice) {
@@ -537,10 +539,12 @@ function tableColumnLabel(index) {
 
 async function saveTableCandidate() {
   if (!tableConflict.value || !tableMerge.value) return;
+  const candidateContent = composeTableDraft(tableMerge.value, { bothStrategy: tableBothStrategy.value });
+  tableCandidate.value = candidateContent;
   const result = await new Promise((resolve) => {
     emit("write-table-candidate", {
       path: tableConflict.value.path,
-      content: `${tableCandidate.value}\n`,
+      content: `${candidateContent}\n`,
       source: "table",
       cellChoices: tableChoiceSummary(tableMerge.value)
     }, resolve);
@@ -875,9 +879,9 @@ async function ensureCommitMessage({ force = false } = {}) {
               :disabled="Boolean(busy) || applyingCandidatePath === file.path"
               @click="applyCandidateFor(file)"
             >{{ applyingCandidatePath === file.path ? '应用中...' : '应用候选并暂存' }}</button>
-            <button v-if="isTableConflict(file)" class="text-button" type="button" :disabled="Boolean(busy)" @click="openTableWorkbench(file.path)">{{ labels.openTableWorkbench }}</button>
-            <button v-else-if="isTextConflict(file)" class="text-button" type="button" :disabled="Boolean(busy)" @click="openTextWorkbench(file.path)">{{ labels.openTextWorkbench }}</button>
-            <button v-else class="text-button" type="button" :disabled="Boolean(busy)" @click="openBinaryWorkbench(file.path)">{{ labels.openBinaryWorkbench }}</button>
+            <button v-if="isTableConflict(file)" class="text-button open-workbench-btn" type="button" :disabled="Boolean(busy)" @click="openTableWorkbench(file.path)">{{ labels.openTableWorkbench }}</button>
+            <button v-else-if="isTextConflict(file)" class="text-button open-workbench-btn" type="button" :disabled="Boolean(busy)" @click="openTextWorkbench(file.path)">{{ labels.openTextWorkbench }}</button>
+            <button v-else class="text-button open-workbench-btn" type="button" :disabled="Boolean(busy)" @click="openBinaryWorkbench(file.path)">{{ labels.openBinaryWorkbench }}</button>
           </div>
         </div>
       </div>
@@ -1092,12 +1096,22 @@ async function ensureCommitMessage({ force = false } = {}) {
               <div
                 class="table-value-card ours"
                 :class="{ active: selectedTableConflict.choice === 'ours' }"
+                role="button"
+                tabindex="0"
+                @click="setTableChoice(selectedTableConflict.row, selectedTableConflict.column, 'ours')"
+                @keydown.enter.prevent="setTableChoice(selectedTableConflict.row, selectedTableConflict.column, 'ours')"
+                @keydown.space.prevent="setTableChoice(selectedTableConflict.row, selectedTableConflict.column, 'ours')"
               >
                 <span>OURS 当前分支</span><code>{{ selectedTableConflict.ours }}</code>
               </div>
               <div
                 class="table-value-card theirs"
                 :class="{ active: selectedTableConflict.choice === 'theirs' }"
+                role="button"
+                tabindex="0"
+                @click="setTableChoice(selectedTableConflict.row, selectedTableConflict.column, 'theirs')"
+                @keydown.enter.prevent="setTableChoice(selectedTableConflict.row, selectedTableConflict.column, 'theirs')"
+                @keydown.space.prevent="setTableChoice(selectedTableConflict.row, selectedTableConflict.column, 'theirs')"
               >
                 <span>THEIRS 合入分支</span><code>{{ selectedTableConflict.theirs }}</code>
               </div>
@@ -1188,7 +1202,7 @@ async function ensureCommitMessage({ force = false } = {}) {
               </thead>
               <tbody>
                 <tr v-for="(row, rowIndex) in tablePreviewRows" :key="`preview:${rowIndex}`">
-                  <th>{{ rowIndex === 0 ? 'HEADER' : `R${rowIndex}` }}</th>
+                  <th>{{ rowIndex === 0 ? 'HEADER' : `R${rowIndex + 1}` }}</th>
                   <td v-for="column in tablePreviewColumnIndexes" :key="`preview:${rowIndex}:${column}`" :class="{ 'table-cell-diff': rowIndex > 0 }">
                     <code>{{ row[column] ?? "" }}</code>
                   </td>

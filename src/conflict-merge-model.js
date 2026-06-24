@@ -212,9 +212,37 @@ function detectDelimiter(...texts) {
 
 function parseDelimitedTable(content, delimiter) {
   const normalized = String(content || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const rows = normalized.split("\n");
-  if (rows.length > 1 && rows.at(-1) === "") rows.pop();
-  return rows.map((line) => parseDelimitedLine(line, delimiter));
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < normalized.length; index++) {
+    const char = normalized[index];
+    if (char === "\"") {
+      if (quoted && normalized[index + 1] === "\"") {
+        cell += "\"";
+        index++;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === delimiter && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if (char === "\n" && !quoted) {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  if (cell || row.length || !rows.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+  if (rows.length > 1 && rows.at(-1).length === 1 && rows.at(-1)[0] === "") rows.pop();
+  return rows;
 }
 
 function parseDelimitedLine(line, delimiter) {
