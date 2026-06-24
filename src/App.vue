@@ -267,6 +267,7 @@ async function runAction(action, payload = {}) {
   } catch (error) {
     view.details = `错误\n${error.message}`;
     log("操作失败", { action: labelAction(action), message: error.message });
+    showOperationFailureNotice(action, error);
     if (repositoryChangingActions.has(action)) {
       try {
         await refreshRepositoryView({ inspect: true });
@@ -299,6 +300,19 @@ function showOperationNotice(action, result = {}) {
     title: action === "continue-rebase-and-push" ? "变基已继续并推送成功" : "推送成功",
     message: branch ? `分支 ${branch} 已经推送到远端。` : "远端已经收到当前分支的提交。"
   };
+}
+
+function showOperationFailureNotice(action, error = {}) {
+  if (!pushSuccessActions.has(action) || !isRemoteAdvancedPushMessage(error.message)) return;
+  operationNotice.value = {
+    tone: "warning",
+    title: "AI 判断：先同步远端",
+    message: "远端已有新提交，本次推送已取消。请点击“同步远端”，完成后再推送；不会 force push。"
+  };
+}
+
+function isRemoteAdvancedPushMessage(message = "") {
+  return /远端已有新提交|remote advanced before push|fetch first|non-fast-forward|updates were rejected/i.test(message);
 }
 
 function clearOperationNotice() {

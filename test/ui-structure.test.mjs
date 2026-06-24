@@ -145,6 +145,9 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(app, /commitResetKey\.value \+= 1/);
   assert.match(app, /const operationNotice = ref\(null\)/);
   assert.match(app, /showOperationNotice\(/);
+  assert.match(app, /showOperationFailureNotice\(/);
+  assert.match(app, /isRemoteAdvancedPushMessage/);
+  assert.match(app, /AI 判断：先同步远端/);
   assert.match(app, /clearOperationNotice/);
   assert.match(app, /operationNotice\.value = null/);
   assert.match(app, /:operation-notice="operationNotice"/);
@@ -157,6 +160,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /aria-label="关闭操作提示"/);
   assert.match(css, /\.operation-notice/);
   assert.match(css, /\.operation-notice\.success/);
+  assert.match(css, /\.operation-notice\.warning/);
   assert.match(workflowView, /emit\("action", "push", \{ confirmed: true \}\)/);
   assert.doesNotMatch(workflowView, /emit\("push", \{ confirmed: true \}\)/);
   assert.doesNotMatch(workflowView, /"push", "load-text-conflict"/);

@@ -349,6 +349,11 @@ h3 { font-size: 15px; margin-bottom: 10px; }
   background: #ecfdf5;
   color: #065f46;
 }
+.operation-notice.warning {
+  border-color: #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+}
 .operation-notice strong {
   display: block;
   font-size: 14px;
@@ -358,6 +363,9 @@ h3 { font-size: 15px; margin-bottom: 10px; }
   margin-top: 2px;
   color: #047857;
   font-size: 12px;
+}
+.operation-notice.warning span {
+  color: #b45309;
 }
 .operation-notice button {
   min-height: 32px;

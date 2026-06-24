@@ -221,6 +221,41 @@ test("workflow runner pushes directly without AI after browser confirmation", as
   assert.equal(git(repo, ["rev-parse", "HEAD"]).trim(), git(repo, ["rev-parse", "@{u}"]).trim());
 });
 
+test("workflow runner blocks push when remote advanced after the last inspect", async () => {
+  const repo = await createRepo("gsc-push-race-runner-");
+  const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-push-race-remote-"));
+  const other = await mkdtemp(path.join(os.tmpdir(), "gsc-push-race-other-"));
+  git(remote, ["init", "--bare", "-b", "main"]);
+  git(repo, ["remote", "add", "origin", remote]);
+  git(repo, ["push", "-u", "origin", "main"]);
+  git(other, ["clone", remote, "."]);
+  git(other, ["config", "user.email", "remote@example.test"]);
+  git(other, ["config", "user.name", "Remote Test"]);
+  await writeFile(path.join(repo, "tracked.txt"), "local\n", "utf8");
+  git(repo, ["commit", "-am", "local push change"]);
+  await writeFile(path.join(other, "remote.txt"), "remote\n", "utf8");
+  git(other, ["add", "remote.txt"]);
+  git(other, ["commit", "-m", "remote race change"]);
+  git(other, ["push"]);
+
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  const result = await runner.run("push", { confirmed: true });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.blocked, true);
+  assert.equal(result.reason, "remote advanced before push");
+  assert.equal(result.summary.behind, 1);
+  assert.match(result.message, /远端已有新提交/);
+  assert.notEqual(git(repo, ["rev-parse", "HEAD"]).trim(), git(repo, ["rev-parse", "@{u}"]).trim());
+});
+
 test("workflow runner blocks direct push without browser confirmation", async () => {
   const repo = await createRepo("gsc-push-confirm-runner-");
   const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-push-confirm-remote-"));
@@ -481,6 +516,43 @@ test("workflow runner blocks AI push when worktree has local changes", async () 
   await assert.rejects(
     () => runner.run("ai-push", { confirmed: true }),
     /push requires clean worktree;.*scratch\.txt/
+  );
+});
+
+test("workflow runner blocks AI push when remote advanced before the AI tool pushes", async () => {
+  const repo = await createRepo("gsc-ai-push-race-runner-");
+  const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-ai-push-race-remote-"));
+  const other = await mkdtemp(path.join(os.tmpdir(), "gsc-ai-push-race-other-"));
+  git(remote, ["init", "--bare", "-b", "main"]);
+  git(repo, ["remote", "add", "origin", remote]);
+  git(repo, ["push", "-u", "origin", "main"]);
+  git(other, ["clone", remote, "."]);
+  git(other, ["config", "user.email", "remote@example.test"]);
+  git(other, ["config", "user.name", "Remote Test"]);
+  await writeFile(path.join(repo, "tracked.txt"), "local\n", "utf8");
+  git(repo, ["commit", "-am", "local push change"]);
+  await writeFile(path.join(other, "remote.txt"), "remote\n", "utf8");
+  git(other, ["add", "remote.txt"]);
+  git(other, ["commit", "-m", "remote race change"]);
+  git(other, ["push"]);
+  const cliOutputs = [
+    JSON.stringify({ tool: "git_push", args: { confirmed: true } })
+  ];
+  let callIndex = 0;
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: { selected: "claude" }
+    },
+    runProcess: async () => ({
+      ok: true, code: 0, stdout: cliOutputs[callIndex++] || "", stderr: "", command: "claude --print"
+    })
+  });
+
+  await assert.rejects(
+    () => runner.run("ai-push", { confirmed: true }),
+    /远端已有新提交/
   );
 });
 
