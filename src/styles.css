@@ -74,6 +74,19 @@ h2 { font-size: 21px; letter-spacing: 0; }
 h3 { font-size: 15px; margin-bottom: 10px; }
 .muted { color: var(--muted); font-size: 13px; }
 .rail .muted { color: #9ca3af; }
+.version-pill {
+  display: inline-flex;
+  width: fit-content;
+  margin: 4px 0 5px;
+  border: 1px solid rgba(34, 197, 94, .35);
+  border-radius: 999px;
+  background: rgba(22, 163, 74, .16);
+  color: #86efac;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+}
 .eyebrow { color: #2563eb; font-size: 12px; font-weight: 900; letter-spacing: 0; }
 
 .connection-card, .setup-card, .commit-card, .action-card, .panel, .metric {
@@ -255,6 +268,7 @@ h3 { font-size: 15px; margin-bottom: 10px; }
 }
 .rail-collapsed .brand-block h1,
 .rail-collapsed .brand-block p,
+.rail-collapsed .version-pill,
 .rail-collapsed .connection-card strong,
 .rail-collapsed .connection-card code,
 .rail-collapsed .connection-card .pill,
@@ -1897,6 +1911,11 @@ textarea {
 }
 .theme-light .rail .muted {
   color: #64748b;
+}
+.theme-light .version-pill {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
 }
 .theme-light .connection-card,
 .theme-light .setup-card {

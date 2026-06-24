@@ -7,6 +7,7 @@ import {
   loadConfig,
   loadBinaryConflict as loadBinaryConflictApi,
   loadGraph as loadGraphApi,
+  loadHealth,
   loadState,
   openEvents as openEventStream,
   exportBinaryConflict as exportBinaryConflictApi,
@@ -139,7 +140,8 @@ const view = reactive({
   configState: "未保存",
   commits: [],
   graphError: "",
-  aiInstallations: []
+  aiInstallations: [],
+  toolVersion: ""
 });
 
 const appClasses = computed(() => [
@@ -219,15 +221,17 @@ async function init() {
 }
 
 async function loadConfigAndState() {
-  const [config, state, aiInstallations] = await Promise.all([
+  const [config, state, aiInstallations, health] = await Promise.all([
     loadConfig(),
     loadState(),
-    loadAiInstallations()
+    loadAiInstallations(),
+    loadHealth()
   ]);
   view.config = config;
   view.state = state.state;
   view.logs = state.logs || [];
   view.aiInstallations = aiInstallations;
+  view.toolVersion = health.version || "";
   view.configState = selectedAi.value ? "已选择" : "未选择";
 }
 
@@ -576,6 +580,7 @@ function publicPayload(payload) {
       :setup-items="setupItems"
       :theme-mode="themeMode"
       :rail-collapsed="railCollapsed"
+      :tool-version="view.toolVersion"
       @select-view="activeView = $event"
       @toggle-theme="toggleTheme"
       @toggle-rail="toggleRail"

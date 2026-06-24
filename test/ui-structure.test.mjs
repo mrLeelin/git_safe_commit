@@ -20,6 +20,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   const settingsView = await readFile(path.join(root, "src", "views", "SettingsView.vue"), "utf8");
   const settingsModel = await readFile(path.join(root, "src", "settings-model.js"), "utf8");
   const graphLayout = await readFile(path.join(root, "src", "graph-layout.js"), "utf8");
+  const packageRelease = await readFile(path.join(root, "package-release.ps1"), "utf8");
 
   assert.match(app, /const zh = \{/);
   assert.match(app, /title: "Git 安全提交"/);
@@ -57,6 +58,18 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(settingsView, /activeSettingsTab === 'local'/);
   assert.match(settingsView, /form\.selectedAi/);
   assert.match(app, /aiInstallations: \[\]/);
+  assert.match(app, /toolVersion: ""/);
+  assert.match(app, /loadHealth\(\)/);
+  assert.match(app, /view\.toolVersion = health\.version \|\| ""/);
+  assert.match(app, /:tool-version="view\.toolVersion"/);
+  assert.match(rail, /toolVersion: \{ type: String, default: "" \}/);
+  assert.match(rail, /class="version-pill"/);
+  assert.match(clientApi, /export async function loadHealth/);
+  assert.match(clientApi, /"\/api\/health"/);
+  assert.match(css, /\.version-pill/);
+  assert.match(css, /\.theme-light \.version-pill/);
+  assert.match(packageRelease, /npm version patch --no-git-tag-version/);
+  assert.match(packageRelease, /\$Version = \$nextVersion/);
   assert.match(app, /const installedAi = computed/);
   assert.match(app, /const selectedAi = computed/);
   assert.match(clientApi, /export async function loadGraph/);

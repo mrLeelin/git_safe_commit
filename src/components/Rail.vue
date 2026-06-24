@@ -8,7 +8,8 @@ defineProps({
   repoPath: { type: String, default: "" },
   setupItems: { type: Array, default: () => [] },
   themeMode: { type: String, default: "dark" },
-  railCollapsed: { type: Boolean, default: false }
+  railCollapsed: { type: Boolean, default: false },
+  toolVersion: { type: String, default: "" }
 });
 
 const emit = defineEmits(["select-view", "toggle-theme", "toggle-rail"]);
@@ -20,6 +21,7 @@ const emit = defineEmits(["select-view", "toggle-theme", "toggle-rail"]);
       <div class="brand">G</div>
       <div>
         <h1>{{ labels.title }}</h1>
+        <span v-if="toolVersion" class="version-pill">v{{ toolVersion }}</span>
         <p class="muted">{{ labels.desc }}</p>
       </div>
     </div>

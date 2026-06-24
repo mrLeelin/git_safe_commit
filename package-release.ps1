@@ -41,6 +41,10 @@ if (-not (Test-Path -LiteralPath (Join-Path $repoRoot "node_modules"))) {
     npm ci
 }
 
+Write-Step "Increment package patch version..."
+$nextVersion = (npm version patch --no-git-tag-version).Trim().TrimStart("v")
+Write-Step "Version: $nextVersion"
+
 Write-Step "Run tests..."
 npm test
 
@@ -48,7 +52,7 @@ Write-Step "Build frontend..."
 npm run build
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
-    $Version = Get-Date -Format "yyyyMMdd-HHmmss"
+    $Version = $nextVersion
 }
 
 $outputRoot = Join-Path $repoRoot "output"

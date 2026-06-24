@@ -101,6 +101,7 @@ test("server exposes health, config, and inspect action", async () => {
     const health = await waitForHealth(baseUrl);
     assert.equal(health.ok, true);
     assert.equal(health.repoPath, repo);
+    assert.match(health.version, /^\d+\.\d+\.\d+$/);
 
     const eventMessage = await readEventMessage(`ws://127.0.0.1:${port}/api/events`);
     assert.equal(eventMessage.event, "state");

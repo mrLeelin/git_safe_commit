@@ -3,6 +3,10 @@ export async function loadConfig() {
   return result.config;
 }
 
+export async function loadHealth() {
+  return request("/api/health");
+}
+
 export async function loadState() {
   return request("/api/state");
 }

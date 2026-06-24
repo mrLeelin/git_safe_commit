@@ -1,6 +1,7 @@
 import express from "express";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 
@@ -24,6 +25,8 @@ import { createWorkflowRunner } from "./lib/workflow-runner.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const toolRoot = path.dirname(__filename);
+const packageInfo = JSON.parse(await readFile(path.join(toolRoot, "package.json"), "utf8"));
+const toolVersion = packageInfo.version || "0.0.0";
 const configPath = defaultConfigPath();
 let config = await loadConfig(configPath, { allowMissing: true });
 const eventClients = new Set();
@@ -35,7 +38,7 @@ app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, tool: "git-safe-commit-tool", repoPath: config.repoPath });
+  res.json({ ok: true, tool: "git-safe-commit-tool", version: toolVersion, repoPath: config.repoPath });
 });
 
 app.get("/api/config", (_req, res) => {
