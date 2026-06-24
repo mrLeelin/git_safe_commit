@@ -4,14 +4,19 @@ import {
   chooseRepoFolder as chooseRepoFolderApi,
   loadAiInstallations,
   loadConfig,
+  loadBinaryConflict as loadBinaryConflictApi,
   loadGraph as loadGraphApi,
   loadState,
   openEvents as openEventStream,
   exportBinaryConflict as exportBinaryConflictApi,
+  openRepoFile as openRepoFileApi,
+  loadTableConflict as loadTableConflictApi,
   loadTextConflict as loadTextConflictApi,
   runAction as runActionApi,
   saveSettings as saveSettingsApi,
   suggestMessage as suggestMessageApi,
+  writeBinaryCandidate as writeBinaryCandidateApi,
+  writeTableCandidate as writeTableCandidateApi,
   writeTextCandidate as writeTextCandidateApi
 } from "./client/api.js";
 import Rail from "./components/Rail.vue";
@@ -50,6 +55,8 @@ const zh = {
   conflictFiles: "冲突文件",
   conflictWorkbench: "冲突工作台",
   openTextWorkbench: "打开文本工作台",
+  openTableWorkbench: "打开表格工作台",
+  openBinaryWorkbench: "打开二进制工作台",
   exportBinaryConflict: "导出二进制版本",
   writeConflictCandidate: "生成候选文件",
   safety: "安全状态",
@@ -272,6 +279,51 @@ async function writeTextCandidate(payload, done) {
   }
 }
 
+async function loadTableConflict(payload, done) {
+  try {
+    done(await loadTableConflictApi(payload));
+  } catch (error) {
+    view.details = `加载表格冲突失败: ${error.message}`;
+    done({ ok: false, error: error.message });
+  }
+}
+
+async function writeTableCandidate(payload, done) {
+  try {
+    done(await writeTableCandidateApi(payload));
+  } catch (error) {
+    view.details = `生成表格候选失败: ${error.message}`;
+    done({ ok: false, error: error.message });
+  }
+}
+
+async function loadBinaryConflict(payload, done) {
+  try {
+    done(await loadBinaryConflictApi(payload));
+  } catch (error) {
+    view.details = `加载二进制冲突失败: ${error.message}`;
+    done({ ok: false, error: error.message });
+  }
+}
+
+async function writeBinaryCandidate(payload, done) {
+  try {
+    done(await writeBinaryCandidateApi(payload));
+  } catch (error) {
+    view.details = `生成二进制候选失败: ${error.message}`;
+    done({ ok: false, error: error.message });
+  }
+}
+
+async function openRepoFile(payload, done) {
+  try {
+    done(await openRepoFileApi(payload));
+  } catch (error) {
+    view.details = `打开候选文件失败: ${error.message}`;
+    done({ ok: false, error: error.message });
+  }
+}
+
 async function exportBinaryConflict(payload, done) {
   try {
     done(await exportBinaryConflictApi(payload));
@@ -401,6 +453,11 @@ function publicPayload(payload) {
           @push="runPush"
           @load-text-conflict="loadTextConflict"
           @write-text-candidate="writeTextCandidate"
+          @load-table-conflict="loadTableConflict"
+          @write-table-candidate="writeTableCandidate"
+          @load-binary-conflict="loadBinaryConflict"
+          @write-binary-candidate="writeBinaryCandidate"
+          @open-repo-file="openRepoFile"
           @export-binary-conflict="exportBinaryConflict"
           @suggest-message="suggestCommitMessage"
           @blocked="setDetails"

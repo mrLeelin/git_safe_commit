@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -151,6 +151,18 @@ test("server exposes health, config, and inspect action", async () => {
     const suggestText = await suggestResponse.text();
     assert.match(suggestResponse.headers.get("content-type") || "", /application\/json/);
     assert.doesNotThrow(() => JSON.parse(suggestText));
+
+    const localCandidate = path.join(repo, ".git", "git-safe-commit-backups", "candidate.txt");
+    await mkdir(path.dirname(localCandidate), { recursive: true });
+    await writeFile(localCandidate, "candidate\n", "utf8");
+    const openResponse = await fetch(`${baseUrl}/api/system/open-file`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: ".git/git-safe-commit-backups/candidate.txt" })
+    });
+    const opened = await openResponse.json();
+    assert.equal(opened.ok, true);
+    assert.equal(opened.path, ".git/git-safe-commit-backups/candidate.txt");
 
     const healthAfterInspect = await fetch(`${baseUrl}/api/health`);
     assert.equal(healthAfterInspect.status, 200);

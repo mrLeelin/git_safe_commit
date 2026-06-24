@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildTableMerge,
   buildLineMergeRows,
   composeLineDraft,
+  composeTableDraft,
   lineChoiceSummary
 } from "../src/conflict-merge-model.js";
 
@@ -45,4 +47,24 @@ test("lineChoiceSummary returns only changed rows", () => {
     ours: "left",
     theirs: "right"
   }]);
+});
+
+test("buildTableMerge flags same-cell conflicts and auto merges different cells", () => {
+  const base = "id,name,score,note\n1,Alice,10,base\n";
+  const ours = "id,name,score,note\n1,Alicia,11,base\n";
+  const theirs = "id,name,score,note\n1,Ally,10,theirs\n";
+
+  const table = buildTableMerge(base, ours, theirs, { delimiter: "," });
+
+  assert.equal(table.conflictCount, 1);
+  assert.equal(table.autoCount, 2);
+  assert.equal(table.cells[1][1].kind, "conflict");
+  assert.equal(table.cells[1][1].base, "Alice");
+  assert.equal(table.cells[1][1].ours, "Alicia");
+  assert.equal(table.cells[1][1].theirs, "Ally");
+  assert.equal(table.cells[1][2].kind, "auto-ours");
+  assert.equal(table.cells[1][2].value, "11");
+  assert.equal(table.cells[1][3].kind, "auto-theirs");
+  assert.equal(table.cells[1][3].value, "theirs");
+  assert.equal(composeTableDraft(table), "id,name,score,note\n1,Alicia,11,theirs");
 });

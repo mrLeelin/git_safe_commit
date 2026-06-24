@@ -32,6 +32,10 @@ export async function chooseRepoFolder() {
   return request("/api/system/pick-folder", { method: "POST" });
 }
 
+export async function openRepoFile(payload = {}) {
+  return request("/api/system/open-file", { method: "POST", body: JSON.stringify(payload) });
+}
+
 export async function suggestMessage(payload = {}) {
   return request("/api/ai/suggest-message", { method: "POST", body: JSON.stringify(payload) });
 }
@@ -42,6 +46,22 @@ export async function loadTextConflict(payload = {}) {
 
 export async function writeTextCandidate(payload = {}) {
   return request("/api/conflict/text/candidate", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function loadTableConflict(payload = {}) {
+  return request("/api/conflict/table/load", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function writeTableCandidate(payload = {}) {
+  return request("/api/conflict/table/candidate", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function loadBinaryConflict(payload = {}) {
+  return request("/api/conflict/binary/load", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function writeBinaryCandidate(payload = {}) {
+  return request("/api/conflict/binary/candidate", { method: "POST", body: JSON.stringify(payload) });
 }
 
 export async function exportBinaryConflict(payload = {}) {

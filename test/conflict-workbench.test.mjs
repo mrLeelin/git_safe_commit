@@ -5,7 +5,15 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { exportBinaryConflict, loadTextConflict, writeTextCandidate } from "../lib/conflict-workbench.mjs";
+import {
+  exportBinaryConflict,
+  loadBinaryConflict,
+  loadTableConflict,
+  loadTextConflict,
+  writeBinaryCandidate,
+  writeTableCandidate,
+  writeTextCandidate
+} from "../lib/conflict-workbench.mjs";
 
 function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
@@ -17,15 +25,18 @@ async function createConflictRepo() {
   git(repo, ["config", "user.email", "tool@example.test"]);
   git(repo, ["config", "user.name", "Tool Test"]);
   await writeFile(path.join(repo, "tracked.js"), "export const value = 1;\n", "utf8");
+  await writeFile(path.join(repo, "data.csv"), "id,name,score,note\n1,Alice,10,base\n", "utf8");
   await writeFile(path.join(repo, "data.bytes"), Buffer.from([1, 2, 3, 4]));
   git(repo, ["add", "."]);
   git(repo, ["commit", "-m", "initial"]);
   git(repo, ["switch", "-c", "feature"]);
   await writeFile(path.join(repo, "tracked.js"), "export const value = 2;\n", "utf8");
+  await writeFile(path.join(repo, "data.csv"), "id,name,score,note\n1,Ally,10,theirs\n", "utf8");
   await writeFile(path.join(repo, "data.bytes"), Buffer.from([2, 2, 3, 4]));
   git(repo, ["commit", "-am", "feature edit"]);
   git(repo, ["switch", "main"]);
   await writeFile(path.join(repo, "tracked.js"), "export const value = 3;\n", "utf8");
+  await writeFile(path.join(repo, "data.csv"), "id,name,score,note\n1,Alicia,11,base\n", "utf8");
   await writeFile(path.join(repo, "data.bytes"), Buffer.from([3, 2, 3, 4]));
   git(repo, ["commit", "-am", "main edit"]);
   assert.throws(() => git(repo, ["merge", "feature"]));
@@ -57,6 +68,30 @@ test("text conflict workbench loads stages and writes a candidate without stagin
   assert.match(git(repo, ["status", "--short"]), /^UU tracked\.js/m);
 });
 
+test("table conflict workbench loads CSV stages and writes merged candidate without staging", async () => {
+  const repo = await createConflictRepo();
+
+  const loaded = await loadTableConflict({ repoPath: repo, filePath: "data.csv" });
+  const candidate = await writeTableCandidate({
+    repoPath: repo,
+    filePath: "data.csv",
+    content: "id,name,score,note\n1,Ally,11,theirs\n",
+    source: "table",
+    cellChoices: [{ row: 1, column: 1, label: "B2", choice: "theirs" }]
+  });
+
+  assert.equal(loaded.ok, true);
+  assert.equal(loaded.tableConflict.merge.conflictCount, 1);
+  assert.equal(loaded.tableConflict.merge.autoCount, 2);
+  assert.equal(loaded.tableConflict.merge.cells[1][1].label, "B2");
+  assert.equal(loaded.tableConflict.merge.cells[1][1].kind, "conflict");
+  assert.match(candidate.tableCandidate.candidate, /\.git\/git-safe-commit-backups\/.+\/table-merge-candidates\/data\.merged\./);
+  assert.equal(await readFile(path.join(repo, candidate.tableCandidate.candidate), "utf8"), "id,name,score,note\n1,Ally,11,theirs\n");
+  const choices = JSON.parse(await readFile(path.join(repo, candidate.tableCandidate.choices), "utf8"));
+  assert.deepEqual(choices.cellChoices, [{ row: 1, column: 1, label: "B2", choice: "theirs" }]);
+  assert.match(git(repo, ["status", "--short"]), /^UU data\.csv/m);
+});
+
 test("binary conflict workbench exports ours and theirs without resolving", async () => {
   const repo = await createConflictRepo();
 
@@ -67,5 +102,22 @@ test("binary conflict workbench exports ours and theirs without resolving", asyn
   assert.match(result.binaryConflict.theirs, /\.git\/git-safe-commit-backups\/.+\/binary-conflicts\/data\.bytes\.theirs\.bytes/);
   assert.deepEqual([...await readFile(path.join(repo, result.binaryConflict.ours))], [3, 2, 3, 4]);
   assert.deepEqual([...await readFile(path.join(repo, result.binaryConflict.theirs))], [2, 2, 3, 4]);
+  assert.match(git(repo, ["status", "--short"]), /^UU data\.bytes/m);
+});
+
+test("binary conflict workbench loads sides and writes selected side as candidate without resolving", async () => {
+  const repo = await createConflictRepo();
+
+  const loaded = await loadBinaryConflict({ repoPath: repo, filePath: "data.bytes" });
+  const candidate = await writeBinaryCandidate({ repoPath: repo, filePath: "data.bytes", choice: "theirs" });
+
+  assert.equal(loaded.ok, true);
+  assert.equal(loaded.binaryConflict.path, "data.bytes");
+  assert.equal(loaded.binaryConflict.ours.byteLength, 4);
+  assert.equal(loaded.binaryConflict.theirs.byteLength, 4);
+  assert.equal(candidate.ok, true);
+  assert.equal(candidate.binaryCandidate.choice, "theirs");
+  assert.match(candidate.binaryCandidate.candidate, /\.git\/git-safe-commit-backups\/.+\/binary-merge-candidates\/data\.selected\.theirs\./);
+  assert.deepEqual([...await readFile(path.join(repo, candidate.binaryCandidate.candidate))], [2, 2, 3, 4]);
   assert.match(git(repo, ["status", "--short"]), /^UU data\.bytes/m);
 });

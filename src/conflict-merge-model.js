@@ -1,4 +1,5 @@
 const MergeChoices = new Set(["ours", "theirs", "both", "none"]);
+const TableChoices = new Set(["ours", "theirs"]);
 
 export function buildLineMergeRows(oursText = "", theirsText = "") {
   const ours = splitLines(oursText);
@@ -63,6 +64,90 @@ export function lineChoiceSummary(rows = []) {
     }));
 }
 
+export function buildTableMerge(baseText = "", oursText = "", theirsText = "", options = {}) {
+  const delimiter = options.delimiter || detectDelimiter(baseText, oursText, theirsText);
+  const base = parseDelimitedTable(baseText, delimiter);
+  const ours = parseDelimitedTable(oursText, delimiter);
+  const theirs = parseDelimitedTable(theirsText, delimiter);
+  const rowCount = Math.max(base.length, ours.length, theirs.length);
+  const columnCount = Math.max(
+    ...[base, ours, theirs].flatMap((table) => table.map((row) => row.length)),
+    0
+  );
+  const cells = [];
+  let conflictCount = 0;
+  let autoCount = 0;
+
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+    const row = [];
+    for (let columnIndex = 0; columnIndex < columnCount; columnIndex++) {
+      const baseValue = cellAt(base, rowIndex, columnIndex);
+      const oursValue = cellAt(ours, rowIndex, columnIndex);
+      const theirsValue = cellAt(theirs, rowIndex, columnIndex);
+      const oursChanged = oursValue !== baseValue;
+      const theirsChanged = theirsValue !== baseValue;
+      let kind = "same";
+      let value = baseValue;
+      let choice = "";
+
+      if (oursValue === theirsValue) {
+        value = oursValue;
+        kind = oursChanged || theirsChanged ? "same-change" : "same";
+      } else if (oursChanged && theirsChanged) {
+        kind = "conflict";
+        value = oursValue;
+        choice = "ours";
+        conflictCount++;
+      } else if (oursChanged) {
+        kind = "auto-ours";
+        value = oursValue;
+        autoCount++;
+      } else if (theirsChanged) {
+        kind = "auto-theirs";
+        value = theirsValue;
+        autoCount++;
+      }
+
+      row.push({
+        id: `${rowIndex}:${columnIndex}`,
+        row: rowIndex,
+        column: columnIndex,
+        label: `${columnName(columnIndex)}${rowIndex + 1}`,
+        kind,
+        base: baseValue,
+        ours: oursValue,
+        theirs: theirsValue,
+        value,
+        choice
+      });
+    }
+    cells.push(row);
+  }
+
+  return { delimiter, rowCount, columnCount, cells, conflictCount, autoCount };
+}
+
+export function composeTableDraft(table) {
+  const delimiter = table?.delimiter || ",";
+  return (table?.cells || [])
+    .map((row) => row.map((cell) => formatDelimitedCell(tableCellValue(cell), delimiter)).join(delimiter))
+    .join("\n");
+}
+
+export function tableChoiceSummary(table) {
+  return (table?.cells || [])
+    .flatMap((row) => row)
+    .filter((cell) => cell.kind === "conflict")
+    .map((cell) => ({
+      row: cell.row,
+      column: cell.column,
+      label: cell.label,
+      choice: TableChoices.has(cell.choice) ? cell.choice : "ours",
+      ours: cell.ours,
+      theirs: cell.theirs
+    }));
+}
+
 function rowContent(row) {
   if (row.kind === "same") return [row.ours];
   if (row.choice === "ours") return row.ours ? [row.ours] : [];
@@ -108,4 +193,72 @@ function lcsPairs(left, right) {
 
 export function isMergeChoice(choice) {
   return MergeChoices.has(choice);
+}
+
+export function isTableChoice(choice) {
+  return TableChoices.has(choice);
+}
+
+function detectDelimiter(...texts) {
+  const sample = texts.find((text) => String(text || "").includes("\t")) || "";
+  return sample.includes("\t") ? "\t" : ",";
+}
+
+function parseDelimitedTable(content, delimiter) {
+  const normalized = String(content || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const rows = normalized.split("\n");
+  if (rows.length > 1 && rows.at(-1) === "") rows.pop();
+  return rows.map((line) => parseDelimitedLine(line, delimiter));
+}
+
+function parseDelimitedLine(line, delimiter) {
+  const cells = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index++) {
+    const char = line[index];
+    if (char === "\"") {
+      if (quoted && line[index + 1] === "\"") {
+        cell += "\"";
+        index++;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === delimiter && !quoted) {
+      cells.push(cell);
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  cells.push(cell);
+  return cells;
+}
+
+function cellAt(table, row, column) {
+  return table[row]?.[column] ?? "";
+}
+
+function tableCellValue(cell) {
+  if (cell?.kind === "conflict") {
+    return cell.choice === "theirs" ? cell.theirs : cell.ours;
+  }
+  return cell?.value ?? "";
+}
+
+function formatDelimitedCell(value, delimiter) {
+  const text = String(value ?? "");
+  if (!text.includes(delimiter) && !text.includes("\"") && !/[\r\n]/.test(text)) return text;
+  return `"${text.replaceAll("\"", "\"\"")}"`;
+}
+
+function columnName(index) {
+  let value = index + 1;
+  let name = "";
+  while (value > 0) {
+    value--;
+    name = String.fromCharCode(65 + (value % 26)) + name;
+    value = Math.floor(value / 26);
+  }
+  return name;
 }

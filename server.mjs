@@ -1,12 +1,22 @@
 import express from "express";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { detectInstalledAi } from "./lib/ai-installations.mjs";
 import { suggestCommitMessage } from "./lib/commit-message-suggester.mjs";
 import { defaultConfigPath, loadConfig, maskConfig, saveConfig } from "./lib/config.mjs";
-import { exportBinaryConflict, loadTextConflict, writeTextCandidate } from "./lib/conflict-workbench.mjs";
+import {
+  exportBinaryConflict,
+  loadBinaryConflict,
+  loadTableConflict,
+  loadTextConflict,
+  writeBinaryCandidate,
+  writeTableCandidate,
+  writeTextCandidate
+} from "./lib/conflict-workbench.mjs";
 import { pickFolder } from "./lib/folder-picker.mjs";
+import { pathInsideRepo } from "./lib/git-executor.mjs";
 import { getGitGraph, getCommitDetail } from "./lib/git-graph.mjs";
 import { createWorkflowRunner } from "./lib/workflow-runner.mjs";
 
@@ -59,6 +69,18 @@ app.post("/api/system/pick-folder", async (_req, res, next) => {
     const result = await pickFolder();
     appendLog("folder-picked", { cancelled: result.cancelled, path: result.path || "" });
     res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/system/open-file", async (req, res, next) => {
+  try {
+    const relativePath = String(req.body.path || "");
+    const target = pathInsideRepo(config.repoPath, relativePath);
+    openLocalFile(target.fullPath);
+    appendLog("file-opened", { path: target.relative });
+    res.json({ ok: true, path: target.relative });
   } catch (error) {
     next(error);
   }
@@ -131,6 +153,56 @@ app.post("/api/conflict/text/candidate", async (req, res, next) => {
   }
 });
 
+app.post("/api/conflict/table/load", async (req, res, next) => {
+  try {
+    const result = await loadTableConflict({ repoPath: config.repoPath, filePath: req.body.path });
+    appendLog("table-conflict-load", { path: req.body.path, conflicts: result.tableConflict?.merge?.conflictCount || 0 });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/conflict/table/candidate", async (req, res, next) => {
+  try {
+    const result = await writeTableCandidate({
+      repoPath: config.repoPath,
+      filePath: req.body.path,
+      content: req.body.content,
+      source: req.body.source,
+      cellChoices: req.body.cellChoices
+    });
+    appendLog("table-conflict-candidate", { path: req.body.path, candidate: result.tableCandidate?.candidate });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/conflict/binary/load", async (req, res, next) => {
+  try {
+    const result = await loadBinaryConflict({ repoPath: config.repoPath, filePath: req.body.path });
+    appendLog("binary-conflict-load", { path: req.body.path });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/conflict/binary/candidate", async (req, res, next) => {
+  try {
+    const result = await writeBinaryCandidate({
+      repoPath: config.repoPath,
+      filePath: req.body.path,
+      choice: req.body.choice
+    });
+    appendLog("binary-conflict-candidate", { path: req.body.path, choice: result.binaryCandidate?.choice, candidate: result.binaryCandidate?.candidate });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/conflict/binary/export", async (req, res, next) => {
   try {
     const result = await exportBinaryConflict({ repoPath: config.repoPath, filePath: req.body.path });
@@ -197,4 +269,16 @@ function broadcast(event, data) {
 function writeEvent(res, event, data) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function openLocalFile(filePath) {
+  if (!filePath || typeof filePath !== "string") throw new Error("file path is required");
+  const command = process.platform === "win32" ? "cmd" : process.platform === "darwin" ? "open" : "xdg-open";
+  const args = process.platform === "win32" ? ["/c", "start", "", filePath] : [filePath];
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true
+  });
+  child.unref();
 }
