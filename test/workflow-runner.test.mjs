@@ -97,6 +97,122 @@ test("workflow runner fetches remote refs directly without AI and refreshes stat
   assert.deepEqual(events.map((item) => item.data.phase), ["Fetching", "Idle"]);
 });
 
+test("workflow runner syncs remote directly with fetch and rebase without AI", async () => {
+  const repo = await createRepo("gsc-sync-runner-");
+  const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-sync-remote-"));
+  const other = await mkdtemp(path.join(os.tmpdir(), "gsc-sync-other-"));
+  git(remote, ["init", "--bare", "-b", "main"]);
+  git(repo, ["remote", "add", "origin", remote]);
+  git(repo, ["push", "-u", "origin", "main"]);
+  git(other, ["clone", remote, "."]);
+  git(other, ["config", "user.email", "remote@example.test"]);
+  git(other, ["config", "user.name", "Remote Test"]);
+
+  await writeFile(path.join(repo, "local.txt"), "local\n", "utf8");
+  git(repo, ["add", "local.txt"]);
+  git(repo, ["commit", "-m", "local change"]);
+  await writeFile(path.join(other, "remote.txt"), "remote\n", "utf8");
+  git(other, ["add", "remote.txt"]);
+  git(other, ["commit", "-m", "remote change"]);
+  git(other, ["push"]);
+  let fetchCalled = false;
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    },
+    fetchImpl: async () => {
+      fetchCalled = true;
+      throw new Error("AI should not be called for direct sync");
+    }
+  });
+
+  const result = await runner.run("sync", {});
+
+  assert.equal(result.ok, true);
+  assert.equal(fetchCalled, false);
+  assert.equal(result.fetch.ok, true);
+  assert.equal(result.rebase.ok, true);
+  assert.equal(result.summary.behind, 0);
+  assert.equal(result.summary.ahead, 1);
+  assert.equal(result.summary.cleanWorktree, true);
+  assert.equal(git(repo, ["log", "-1", "--pretty=%s"]).trim(), "local change");
+  assert.match(git(repo, ["log", "--pretty=%s", "--max-count=2"]), /remote change/);
+});
+
+test("workflow runner pushes directly without AI after browser confirmation", async () => {
+  const repo = await createRepo("gsc-push-runner-");
+  const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-push-remote-"));
+  git(remote, ["init", "--bare", "-b", "main"]);
+  git(repo, ["remote", "add", "origin", remote]);
+  git(repo, ["push", "-u", "origin", "main"]);
+  await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
+  git(repo, ["commit", "-am", "local push change"]);
+  let fetchCalled = false;
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    },
+    fetchImpl: async () => {
+      fetchCalled = true;
+      throw new Error("AI should not be called for direct push");
+    }
+  });
+
+  const result = await runner.run("push", { confirmed: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(fetchCalled, false);
+  assert.equal(result.push.ok, true);
+  assert.equal(result.summary.ahead, 0);
+  assert.equal(git(repo, ["rev-parse", "HEAD"]).trim(), git(repo, ["rev-parse", "@{u}"]).trim());
+});
+
+test("workflow runner blocks direct push without browser confirmation", async () => {
+  const repo = await createRepo("gsc-push-confirm-runner-");
+  const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-push-confirm-remote-"));
+  git(remote, ["init", "--bare", "-b", "main"]);
+  git(repo, ["remote", "add", "origin", remote]);
+  git(repo, ["push", "-u", "origin", "main"]);
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  const result = await runner.run("push", {});
+
+  assert.equal(result.ok, false);
+  assert.equal(result.blocked, true);
+  assert.equal(result.reason, "push confirmation required");
+});
+
+test("workflow runner refuses direct sync when local worktree is dirty", async () => {
+  const repo = await createRepo("gsc-sync-dirty-runner-");
+  const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-sync-dirty-remote-"));
+  git(remote, ["init", "--bare", "-b", "main"]);
+  git(repo, ["remote", "add", "origin", remote]);
+  git(repo, ["push", "-u", "origin", "main"]);
+  await writeFile(path.join(repo, "tracked.txt"), "dirty\n", "utf8");
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  await assert.rejects(
+    () => runner.run("sync", {}),
+    /clean worktree/
+  );
+});
+
 test("workflow runner continues a resolved rebase conflict and pushes without creating a new commit", async () => {
   const repo = await createRepo("gsc-rebase-runner-");
   const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-rebase-remote-"));

@@ -30,7 +30,7 @@ const props = defineProps({
   nextStep: { type: String, default: "" }
 });
 
-const emit = defineEmits(["action", "commit", "push", "load-text-conflict", "write-text-candidate", "load-table-conflict", "write-table-candidate", "load-binary-conflict", "write-binary-candidate", "apply-candidate", "open-repo-file", "export-binary-conflict", "candidate-created", "suggest-message", "blocked"]);
+const emit = defineEmits(["action", "commit", "load-text-conflict", "write-text-candidate", "load-table-conflict", "write-table-candidate", "load-binary-conflict", "write-binary-candidate", "apply-candidate", "open-repo-file", "export-binary-conflict", "candidate-created", "suggest-message", "blocked"]);
 
 const selectedPaths = ref([]);
 const commitMessage = ref("");
@@ -237,11 +237,11 @@ function confirmExecute() {
   const action = confirmAction.value;
   confirmAction.value = null;
   if (action === "push") {
-    emit("push", { confirmed: true });
+    emit("action", "push", { confirmed: true });
   } else if (action === "continue-rebase-and-push") {
     emit("action", "continue-rebase-and-push", { confirmed: true });
   } else if (action === "sync") {
-    emit("action", "ai-sync");
+    emit("action", "sync");
   }
 }
 

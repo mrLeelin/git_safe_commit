@@ -233,7 +233,7 @@ async function runAction(action, payload = {}) {
     if (result.status || result.summary) view.result = { status: result.status, summary: result.summary };
     view.details = JSON.stringify(result, null, 2);
     log("操作完成", { action: labelAction(action) });
-    if (action === "inspect" || action === "create-recovery" || action === "fetch" || action === "resolve-conflict" || action === "commit" || action.startsWith("ai-")) {
+    if (action === "inspect" || action === "create-recovery" || action === "fetch" || action === "sync" || action === "push" || action === "resolve-conflict" || action === "commit" || action === "continue-rebase-and-push" || action.startsWith("ai-")) {
       await Promise.all([loadConfigAndState(), loadGraph()]);
       if (action === "commit" || action === "ai-commit") commitResetKey.value += 1;
     }
@@ -288,10 +288,6 @@ function formatBlocker(blocker, candidateCount, unmergedCount) {
 
 async function runCommit(payload) {
   await runAction("commit", payload);
-}
-
-async function runPush(payload) {
-  await runAction("ai-push", payload);
 }
 
 async function suggestCommitMessage(paths, done) {
@@ -457,8 +453,10 @@ function labelAction(action) {
     inspect: zh.inspectRepo,
     "create-recovery": zh.createRecovery,
     fetch: zh.fetchRemote,
+    sync: zh.aiSync,
     "resolve-conflict": zh.conflictFiles,
     commit: zh.aiCommit,
+    push: zh.aiPush,
     "ai-commit": zh.aiCommit,
     "ai-sync": zh.aiSync,
     "ai-push": zh.aiPush
@@ -509,7 +507,6 @@ function publicPayload(payload) {
           :next-step="nextStep"
           @action="runAction"
           @commit="runCommit"
-          @push="runPush"
           @load-text-conflict="loadTextConflict"
           @write-text-candidate="writeTextCandidate"
           @load-table-conflict="loadTableConflict"

@@ -138,8 +138,13 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(app, /工作区检查未通过/);
   assert.match(workflowView, /commitResetKey/);
   assert.match(app, /commitResetKey\.value \+= 1/);
-  assert.match(workflowView, /emit\("push", \{ confirmed: true \}\)/);
+  assert.match(workflowView, /emit\("action", "push", \{ confirmed: true \}\)/);
+  assert.doesNotMatch(workflowView, /emit\("push", \{ confirmed: true \}\)/);
+  assert.doesNotMatch(workflowView, /"push", "load-text-conflict"/);
+  assert.doesNotMatch(app, /@push="runPush"/);
   assert.match(workflowView, /emit\("action", "continue-rebase-and-push", \{ confirmed: true \}\)/);
+  assert.match(workflowView, /emit\("action", "sync"\)/);
+  assert.doesNotMatch(workflowView, /emit\("action", "ai-sync"\)/);
   assert.match(workflowView, /const rebaseInProgress = computed/);
   assert.match(workflowView, /继续变基并推送/);
   assert.match(workflowView, /rebaseInProgress\.value/);
