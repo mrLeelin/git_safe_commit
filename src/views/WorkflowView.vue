@@ -5,6 +5,7 @@ import {
   buildLineMergeRows,
   composeLineDraft,
   composeTableDraft,
+  composeTableRows,
   isMergeChoice,
   isTableChoice,
   lineChoiceSummary,
@@ -29,7 +30,7 @@ const props = defineProps({
   nextStep: { type: String, default: "" }
 });
 
-const emit = defineEmits(["action", "commit", "push", "load-text-conflict", "write-text-candidate", "load-table-conflict", "write-table-candidate", "load-binary-conflict", "write-binary-candidate", "open-repo-file", "export-binary-conflict", "suggest-message", "blocked"]);
+const emit = defineEmits(["action", "commit", "push", "load-text-conflict", "write-text-candidate", "load-table-conflict", "write-table-candidate", "load-binary-conflict", "write-binary-candidate", "apply-candidate", "open-repo-file", "export-binary-conflict", "candidate-created", "suggest-message", "blocked"]);
 
 const selectedPaths = ref([]);
 const commitMessage = ref("");
@@ -45,16 +46,22 @@ const textLineRows = ref([]);
 const tableConflict = ref(null);
 const tableMerge = ref(null);
 const tableCandidate = ref("");
+const selectedTableCellId = ref("");
+const tableRowBulkChoice = ref("ours");
+const tableBothStrategy = ref("rows");
 const binaryConflict = ref(null);
 const binaryChoice = ref("ours");
 const candidatePath = ref("");
+const candidateResultsByPath = ref({});
 const workbenchMessage = ref("");
 const candidateHighlight = ref(null);
+const applyingCandidatePath = ref("");
 const workbenchActive = computed(() => Boolean(activeConflictPath.value));
 
 const selectedFileCount = computed(() => selectedPaths.value.length);
 const selectedFilesLabel = computed(() => `${selectedFileCount.value} / ${props.selectableFiles.length}`);
 const changedCount = computed(() => props.files.length);
+const rebaseInProgress = computed(() => Boolean(props.summary?.rebaseInProgress || props.status?.rebaseInProgress));
 const canCommit = computed(() => !commitBlockReason.value && !props.busy);
 const canPush = computed(() => !pushBlockReason.value && !props.busy);
 const visibleSelectableFiles = computed(() => {
@@ -74,10 +81,39 @@ const directoryOptions = computed(() => {
     .map(([name, count]) => ({ name, count }))
     .sort((left, right) => left.name.localeCompare(right.name));
 });
+const tableConflictItems = computed(() => {
+  return (tableMerge.value?.cells || [])
+    .flatMap((row) => row)
+    .filter((cell) => cell.kind === "conflict");
+});
+const selectedTableConflict = computed(() => {
+  return tableConflictItems.value.find((cell) => cell.id === selectedTableCellId.value) || tableConflictItems.value[0] || null;
+});
+const tableRowsWithDiff = computed(() => {
+  return (tableMerge.value?.cells || []).filter((row) => row.some(tableCellHasDiff));
+});
+const tableColumnIndexes = computed(() => {
+  const columns = new Set();
+  for (const row of tableRowsWithDiff.value) {
+    row.forEach((cell, index) => {
+      if (tableCellHasDiff(cell)) columns.add(index);
+    });
+  }
+  if (!columns.size && tableMerge.value?.columnCount) {
+    for (let index = 0; index < tableMerge.value.columnCount; index++) columns.add(index);
+  }
+  return [...columns].sort((left, right) => left - right);
+});
+const tablePreviewRows = computed(() => composeTableRows(tableMerge.value, { bothStrategy: tableBothStrategy.value }));
+const tablePreviewColumnIndexes = computed(() => {
+  const width = Math.max(...tablePreviewRows.value.map((row) => row.length), 0);
+  return Array.from({ length: width }, (_, index) => index);
+});
 
 const commitBlockReason = computed(() => {
   if (!props.config?.repoPath) return "缺少仓库路径";
   if (!props.summary) return "先检查仓库";
+  if (rebaseInProgress.value) return "正在 rebase，请继续变基并推送，不要重新 commit";
   if (props.blockers.length) return "存在阻断项";
   if (!selectedPaths.value.length) return "先选择文件";
   return "";
@@ -190,7 +226,7 @@ function runPush() {
     emit("blocked", pushBlockReason.value);
     return;
   }
-  confirmAction.value = "push";
+  confirmAction.value = rebaseInProgress.value ? "continue-rebase-and-push" : "push";
 }
 
 function runSync() {
@@ -202,6 +238,8 @@ function confirmExecute() {
   confirmAction.value = null;
   if (action === "push") {
     emit("push", { confirmed: true });
+  } else if (action === "continue-rebase-and-push") {
+    emit("action", "continue-rebase-and-push", { confirmed: true });
   } else if (action === "sync") {
     emit("action", "ai-sync");
   }
@@ -220,10 +258,61 @@ function closeWorkbench() {
   tableConflict.value = null;
   tableMerge.value = null;
   tableCandidate.value = "";
+  selectedTableCellId.value = "";
+  tableRowBulkChoice.value = "ours";
+  tableBothStrategy.value = "rows";
   binaryConflict.value = null;
   binaryChoice.value = "ours";
   candidatePath.value = "";
   workbenchMessage.value = "";
+}
+
+function rememberCandidateResult(path, candidate, message) {
+  if (!path || !candidate) return;
+  candidateResultsByPath.value = {
+    ...candidateResultsByPath.value,
+    [path]: { candidate, message }
+  };
+}
+
+function restoreCandidateResult(path, fallbackMessage) {
+  const result = candidateResultsByPath.value[path];
+  candidatePath.value = result?.candidate || "";
+  workbenchMessage.value = result?.message || fallbackMessage;
+}
+
+function conflictCandidateFor(file) {
+  return file?.candidate || candidateResultsByPath.value[file?.path]?.candidate || "";
+}
+
+async function applyCandidateFor(file) {
+  const path = file?.path || "";
+  const candidate = conflictCandidateFor(file);
+  if (!path || !candidate) return;
+  applyingCandidatePath.value = path;
+  const result = await new Promise((resolve) => {
+    emit("apply-candidate", { path, candidate }, resolve);
+  });
+  applyingCandidatePath.value = "";
+  if (result.ok) {
+    const message = `候选内容已应用回冲突文件并暂存：${path}`;
+    workbenchMessage.value = message;
+    rememberCandidateResult(path, candidate, message);
+  } else {
+    workbenchMessage.value = result.error || "应用候选失败";
+  }
+}
+
+function applyCurrentCandidate() {
+  applyCandidateFor({ path: activeConflictPath.value, candidate: candidatePath.value });
+}
+
+function conflictRowClass(file) {
+  const hasCandidate = Boolean(conflictCandidateFor(file));
+  return {
+    "candidate-ready": hasCandidate,
+    "candidate-missing": !hasCandidate
+  };
 }
 
 function isTextConflict(file) {
@@ -239,6 +328,9 @@ async function openTextWorkbench(path) {
   tableConflict.value = null;
   tableMerge.value = null;
   tableCandidate.value = "";
+  selectedTableCellId.value = "";
+  tableRowBulkChoice.value = "ours";
+  tableBothStrategy.value = "rows";
   binaryConflict.value = null;
   binaryChoice.value = "ours";
   candidatePath.value = "";
@@ -257,7 +349,7 @@ async function openTextWorkbench(path) {
   );
   textDraftSource.value = "line";
   textCandidate.value = composeLineDraft(textLineRows.value);
-  workbenchMessage.value = "文本冲突已加载。上方编辑候选内容，或在按行对比中选择 OURS / THEIRS / BOTH / NONE；只会生成候选文件。";
+  restoreCandidateResult(path, "文本冲突已加载。上方编辑候选内容，或在按行对比中选择 OURS / THEIRS / BOTH / NONE；只会生成候选文件。");
 }
 
 async function openTableWorkbench(path) {
@@ -265,6 +357,9 @@ async function openTableWorkbench(path) {
   textConflict.value = null;
   textCandidate.value = "";
   textLineRows.value = [];
+  selectedTableCellId.value = "";
+  tableRowBulkChoice.value = "ours";
+  tableBothStrategy.value = "rows";
   binaryConflict.value = null;
   binaryChoice.value = "ours";
   candidatePath.value = "";
@@ -282,8 +377,9 @@ async function openTableWorkbench(path) {
     result.tableConflict.ours?.content || "",
     result.tableConflict.theirs?.content || ""
   );
-  tableCandidate.value = composeTableDraft(tableMerge.value);
-  workbenchMessage.value = `表格冲突已加载。同格冲突 ${tableMerge.value.conflictCount} 个；不同格自动合并 ${tableMerge.value.autoCount} 个。候选文件只会写入备份目录。`;
+  selectedTableCellId.value = tableConflictItems.value[0]?.id || "";
+  refreshTableCandidate();
+  restoreCandidateResult(path, `表格冲突已加载。同格冲突 ${tableMerge.value.conflictCount} 个；不同格自动合并 ${tableMerge.value.autoCount} 个。候选文件只会写入备份目录。`);
 }
 
 async function openBinaryWorkbench(path) {
@@ -295,6 +391,9 @@ async function openBinaryWorkbench(path) {
   tableConflict.value = null;
   tableMerge.value = null;
   tableCandidate.value = "";
+  selectedTableCellId.value = "";
+  tableRowBulkChoice.value = "ours";
+  tableBothStrategy.value = "rows";
   binaryConflict.value = null;
   binaryChoice.value = "ours";
   candidatePath.value = "";
@@ -307,7 +406,7 @@ async function openBinaryWorkbench(path) {
     return;
   }
   binaryConflict.value = result.binaryConflict;
-  workbenchMessage.value = "二进制冲突已加载。不可文本合并，只能选择 OURS 或 THEIRS 生成候选文件。";
+  restoreCandidateResult(path, "二进制冲突已加载。不可文本合并，只能选择 OURS 或 THEIRS 生成候选文件。");
 }
 
 async function saveTextCandidate() {
@@ -320,10 +419,16 @@ async function saveTextCandidate() {
       lineChoices: lineChoiceSummary(textLineRows.value)
     }, resolve);
   });
-  candidatePath.value = result.ok ? result.textCandidate.candidate : "";
-  workbenchMessage.value = result.ok
-    ? `候选文件已生成：${result.textCandidate.candidate}`
-    : (result.error || "生成候选失败");
+  if (result.ok) {
+    const message = `候选文件已生成：${result.textCandidate.candidate}`;
+    candidatePath.value = result.textCandidate.candidate;
+    workbenchMessage.value = message;
+    rememberCandidateResult(textConflict.value.path, result.textCandidate.candidate, message);
+    emit("candidate-created", { path: textConflict.value.path, candidate: result.textCandidate.candidate, type: "text" });
+  } else {
+    candidatePath.value = "";
+    workbenchMessage.value = result.error || "生成候选失败";
+  }
 }
 
 function setDraftFromSource(source) {
@@ -361,7 +466,73 @@ function setTableChoice(rowIndex, columnIndex, choice) {
   const cell = tableMerge.value.cells?.[rowIndex]?.[columnIndex];
   if (!cell || cell.kind !== "conflict") return;
   cell.choice = choice;
-  tableCandidate.value = composeTableDraft(tableMerge.value);
+  selectedTableCellId.value = cell.id;
+  refreshTableCandidate();
+}
+
+function selectTableConflict(cell) {
+  selectedTableCellId.value = cell?.id || "";
+}
+
+function setTableRowChoice(rowIndex, choice) {
+  if (!isTableChoice(choice) || !tableMerge.value) return;
+  const row = tableMerge.value.cells?.[rowIndex] || [];
+  for (const cell of row) {
+    if (cell.kind === "conflict") cell.choice = choice;
+  }
+  const firstConflict = row.find((cell) => cell.kind === "conflict");
+  if (firstConflict) selectedTableCellId.value = firstConflict.id;
+  refreshTableCandidate();
+}
+
+function applySelectedTableRowChoice() {
+  if (!selectedTableConflict.value) return;
+  setTableRowChoice(selectedTableConflict.value.row, tableRowBulkChoice.value);
+}
+
+function setTableBothStrategy(strategy) {
+  tableBothStrategy.value = strategy === "columns" ? "columns" : "rows";
+  refreshTableCandidate();
+}
+
+function refreshTableCandidate() {
+  tableCandidate.value = composeTableDraft(tableMerge.value, { bothStrategy: tableBothStrategy.value });
+}
+
+function tableCellHasDiff(cell) {
+  return Boolean(cell && !["same", "same-change"].includes(cell.kind));
+}
+
+function tableSideCellValue(cell, side) {
+  return side === "theirs" ? (cell?.theirs ?? "") : (cell?.ours ?? "");
+}
+
+function tableSideCellClass(cell, side) {
+  const selectedSource = cell?.choice || "ours";
+  return {
+    "table-cell-diff": tableCellHasDiff(cell),
+    "table-cell-conflict": cell?.kind === "conflict",
+    "table-cell-auto": cell?.kind === "auto-ours" || cell?.kind === "auto-theirs",
+    "table-cell-selected": cell?.kind === "conflict" && (selectedSource === side || selectedSource === "both"),
+    "table-cell-rejected": cell?.kind === "conflict" && selectedSource !== side && selectedSource !== "both"
+  };
+}
+
+function tableSideChoiceLabel(cell, side) {
+  if (cell?.choice === "both") return "都要";
+  if (cell?.choice === "none") return "不要";
+  return cell?.choice === side ? "采用" : "未选";
+}
+
+function tableColumnLabel(index) {
+  let value = Number(index) + 1;
+  let label = "";
+  while (value > 0) {
+    value--;
+    label = String.fromCharCode(65 + (value % 26)) + label;
+    value = Math.floor(value / 26);
+  }
+  return label || String(index + 1);
 }
 
 async function saveTableCandidate() {
@@ -374,10 +545,16 @@ async function saveTableCandidate() {
       cellChoices: tableChoiceSummary(tableMerge.value)
     }, resolve);
   });
-  candidatePath.value = result.ok ? result.tableCandidate.candidate : "";
-  workbenchMessage.value = result.ok
-    ? `表格候选文件已生成：${result.tableCandidate.candidate}`
-    : (result.error || "生成候选失败");
+  if (result.ok) {
+    const message = `表格候选文件已生成：${result.tableCandidate.candidate}`;
+    candidatePath.value = result.tableCandidate.candidate;
+    workbenchMessage.value = message;
+    rememberCandidateResult(tableConflict.value.path, result.tableCandidate.candidate, message);
+    emit("candidate-created", { path: tableConflict.value.path, candidate: result.tableCandidate.candidate, type: "table" });
+  } else {
+    candidatePath.value = "";
+    workbenchMessage.value = result.error || "生成候选失败";
+  }
 }
 
 async function saveBinaryCandidate() {
@@ -388,10 +565,16 @@ async function saveBinaryCandidate() {
       choice: binaryChoice.value
     }, resolve);
   });
-  candidatePath.value = result.ok ? result.binaryCandidate.candidate : "";
-  workbenchMessage.value = result.ok
-    ? `二进制候选文件已生成：${result.binaryCandidate.candidate}（${result.binaryCandidate.choice.toUpperCase()}，${formatBytes(result.binaryCandidate.byteLength)}）`
-    : (result.error || "生成候选失败");
+  if (result.ok) {
+    const message = `二进制候选文件已生成：${result.binaryCandidate.candidate}（${result.binaryCandidate.choice.toUpperCase()}，${formatBytes(result.binaryCandidate.byteLength)}）`;
+    candidatePath.value = result.binaryCandidate.candidate;
+    workbenchMessage.value = message;
+    rememberCandidateResult(binaryConflict.value.path, result.binaryCandidate.candidate, message);
+    emit("candidate-created", { path: binaryConflict.value.path, candidate: result.binaryCandidate.candidate, type: "binary" });
+  } else {
+    candidatePath.value = "";
+    workbenchMessage.value = result.error || "生成候选失败";
+  }
 }
 
 async function openGeneratedCandidate() {
@@ -672,15 +855,26 @@ async function ensureCommitMessage({ force = false } = {}) {
       </div>
       <button class="btn sync-btn" type="button" :disabled="Boolean(busy)" @click="runSync">{{ labels.aiSync }}</button>
       <div class="action-stack">
-        <button class="btn danger" type="button" :disabled="!canPush" @click="runPush">{{ labels.aiPush }}</button>
-        <span class="disabled-reason">{{ pushBlockReason || "推送门禁已满足" }}</span>
+        <button class="btn danger" type="button" :disabled="!canPush" @click="runPush">{{ rebaseInProgress ? '继续变基并推送' : labels.aiPush }}</button>
+        <span class="disabled-reason">{{ pushBlockReason || (rebaseInProgress ? "冲突已解决后继续 rebase，然后推送" : "推送门禁已满足") }}</span>
       </div>
 
       <div v-if="conflictFiles.length" class="conflict-box">
         <strong>{{ labels.conflictWorkbench }}</strong>
-        <div v-for="file in conflictFiles" :key="file.path" class="conflict-row">
-          <code>{{ file.path }}</code>
+        <div v-for="file in conflictFiles" :key="file.path" class="conflict-row" :class="conflictRowClass(file)">
+          <div class="conflict-file-meta">
+            <code>{{ file.path }}</code>
+            <span v-if="conflictCandidateFor(file)" class="candidate-ready-pill">候选已生成</span>
+            <span v-else class="candidate-missing-pill">待生成候选</span>
+          </div>
           <div class="conflict-actions">
+            <button
+              v-if="conflictCandidateFor(file)"
+              class="text-button apply-candidate-btn"
+              type="button"
+              :disabled="Boolean(busy) || applyingCandidatePath === file.path"
+              @click="applyCandidateFor(file)"
+            >{{ applyingCandidatePath === file.path ? '应用中...' : '应用候选并暂存' }}</button>
             <button v-if="isTableConflict(file)" class="text-button" type="button" :disabled="Boolean(busy)" @click="openTableWorkbench(file.path)">{{ labels.openTableWorkbench }}</button>
             <button v-else-if="isTextConflict(file)" class="text-button" type="button" :disabled="Boolean(busy)" @click="openTextWorkbench(file.path)">{{ labels.openTextWorkbench }}</button>
             <button v-else class="text-button" type="button" :disabled="Boolean(busy)" @click="openBinaryWorkbench(file.path)">{{ labels.openBinaryWorkbench }}</button>
@@ -823,6 +1017,7 @@ async function ensureCommitMessage({ force = false } = {}) {
           <button class="btn" type="button" @click="saveTextCandidate">{{ labels.writeConflictCandidate }}</button>
           <div class="candidate-result" v-if="candidatePath">
             <span>候选文件已生成：<code>{{ candidatePath }}</code></span>
+            <button class="btn secondary apply-candidate-btn" type="button" :disabled="Boolean(busy) || applyingCandidatePath === activeConflictPath" @click="applyCurrentCandidate">{{ applyingCandidatePath === activeConflictPath ? '应用中...' : '应用候选并暂存' }}</button>
             <button class="btn secondary open-candidate-btn" type="button" @click="openGeneratedCandidate">打开候选文件</button>
           </div>
           <pre v-if="workbenchMessage" class="workbench-message">{{ workbenchMessage }}</pre>
@@ -838,50 +1033,176 @@ async function ensureCommitMessage({ force = false } = {}) {
         </div>
       </div>
       <div class="workbench-body">
-        <div class="table-summary">
-          <span class="source-pill">同格冲突 {{ tableMerge.conflictCount }}</span>
-          <span class="source-pill auto">自动合并 {{ tableMerge.autoCount }}</span>
-          <span>{{ tableConflict.path }}</span>
-        </div>
-
-        <div class="table-grid-wrap">
-          <table class="table-grid">
-            <tbody>
-              <tr v-for="(row, rowIndex) in tableMerge.cells" :key="rowIndex">
-                <td v-for="cell in row" :key="cell.id" :class="{ 'cell-conflict': cell.kind === 'conflict', 'cell-auto': cell.kind === 'auto-ours' || cell.kind === 'auto-theirs' }">
-                  <div class="cell-head">
-                    <strong>{{ cell.label }}</strong>
-                    <span>{{ cell.kind }}</span>
-                  </div>
-                  <div class="cell-value">{{ cell.kind === 'conflict' && cell.choice === 'theirs' ? cell.theirs : cell.value }}</div>
-                  <div v-if="cell.kind === 'conflict'" class="cell-choice">
-                    <button class="mini-btn text-choice-btn ours" :class="{ active: cell.choice === 'ours' }" type="button" @click="setTableChoice(cell.row, cell.column, 'ours')">OURS {{ cell.ours }}</button>
-                    <button class="mini-btn text-choice-btn theirs" :class="{ active: cell.choice === 'theirs' }" type="button" @click="setTableChoice(cell.row, cell.column, 'theirs')">THEIRS {{ cell.theirs }}</button>
-                  </div>
-                  <div v-else-if="cell.kind === 'auto-ours' || cell.kind === 'auto-theirs'" class="auto-note">
-                    {{ cell.kind === 'auto-ours' ? '采用 OURS' : '采用 THEIRS' }}
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="text-candidate">
-          <div class="text-pane-head">
+        <div class="table-workbench-hero">
+          <div class="table-hero-main">
+            <span class="choice-state-dot" :class="tableMerge.conflictCount ? 'theirs' : 'ours'"></span>
             <div>
-              <strong>候选表格内容</strong>
-              <span>CSV/TSV 文本预览，可在保存前手动微调。</span>
+              <strong>{{ tableMerge.conflictCount ? "需要人工决策" : "可自动合并" }}</strong>
+              <p>默认以 OURS 为基底；只有显式选择 THEIRS 的格子会覆盖候选。不同格子的单边修改自动进入候选。</p>
             </div>
-            <span class="source-pill">TABLE</span>
           </div>
-          <textarea v-model="tableCandidate" spellcheck="false" rows="10"></textarea>
+          <div class="table-hero-metrics">
+            <div class="excel-metric bad"><span>同格冲突</span><strong>{{ tableMerge.conflictCount }}</strong></div>
+            <div class="excel-metric ok"><span>自动合并</span><strong>{{ tableMerge.autoCount }}</strong></div>
+            <div class="excel-metric info"><span>显示行列</span><strong>{{ tableRowsWithDiff.length }} / {{ tableColumnIndexes.length }}</strong></div>
+            <div class="excel-metric"><span>候选模式</span><strong>只写备份</strong></div>
+          </div>
+          <div class="table-hero-note">
+            <strong>{{ tableConflict.path }}</strong>
+            <span>候选文件不会覆盖原冲突文件，不执行 git add。</span>
+          </div>
         </div>
+
+        <div class="table-decision-grid" :class="{ 'no-conflicts': !tableConflictItems.length }">
+          <section class="table-conflict-list">
+            <div class="table-section-head">
+              <strong>冲突队列</strong>
+              <span class="source-pill" :class="{ auto: tableConflictItems.every((cell) => cell.choice) }">{{ tableConflictItems.filter((cell) => cell.choice).length }}/{{ tableConflictItems.length }} 已选择</span>
+            </div>
+            <div v-if="tableConflictItems.length" class="table-conflict-table-wrap">
+              <table class="table-conflict-table">
+                <thead>
+                  <tr><th>格子</th><th>OURS</th><th>THEIRS</th><th>当前</th></tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="cell in tableConflictItems"
+                    :key="cell.id"
+                    :class="{ active: selectedTableConflict?.id === cell.id }"
+                    @click="selectTableConflict(cell)"
+                  >
+                    <td><strong>{{ cell.label }}</strong></td>
+                    <td>{{ cell.ours }}</td>
+                    <td>{{ cell.theirs }}</td>
+                    <td>{{ (cell.choice || "ours").toUpperCase() }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="table-empty-decision">当前表格没有同格冲突，可以直接生成候选文件。</div>
+          </section>
+
+          <section v-if="selectedTableConflict" class="table-conflict-detail">
+            <div class="table-section-head">
+              <strong>{{ selectedTableConflict.label }} 决策</strong>
+              <span class="source-pill">{{ (selectedTableConflict.choice || "ours").toUpperCase() }}</span>
+            </div>
+            <div class="table-value-grid">
+              <div class="table-value-card base"><span>BASE</span><code>{{ selectedTableConflict.base }}</code></div>
+              <div
+                class="table-value-card ours"
+                :class="{ active: selectedTableConflict.choice === 'ours' }"
+              >
+                <span>OURS 当前分支</span><code>{{ selectedTableConflict.ours }}</code>
+              </div>
+              <div
+                class="table-value-card theirs"
+                :class="{ active: selectedTableConflict.choice === 'theirs' }"
+              >
+                <span>THEIRS 合入分支</span><code>{{ selectedTableConflict.theirs }}</code>
+              </div>
+            </div>
+            <div class="table-choice-panel">
+              <div class="table-choice-segment" aria-label="当前格子决策">
+                <button class="table-choice-option ours" :class="{ active: selectedTableConflict.choice === 'ours' }" type="button" @click="setTableChoice(selectedTableConflict.row, selectedTableConflict.column, 'ours')">
+                  <strong>OURS</strong><span>当前分支</span>
+                </button>
+                <button class="table-choice-option theirs" :class="{ active: selectedTableConflict.choice === 'theirs' }" type="button" @click="setTableChoice(selectedTableConflict.row, selectedTableConflict.column, 'theirs')">
+                  <strong>THEIRS</strong><span>合入分支</span>
+                </button>
+                <button class="table-choice-option both" :class="{ active: selectedTableConflict.choice === 'both' }" type="button" @click="setTableChoice(selectedTableConflict.row, selectedTableConflict.column, 'both')">
+                  <strong>BOTH</strong><span>两个都要</span>
+                </button>
+                <button class="table-choice-option none" :class="{ active: selectedTableConflict.choice === 'none' }" type="button" @click="setTableChoice(selectedTableConflict.row, selectedTableConflict.column, 'none')">
+                  <strong>NONE</strong><span>清空</span>
+                </button>
+              </div>
+              <div v-if="selectedTableConflict.choice === 'both'" class="table-output-mode" aria-label="BOTH 输出方式">
+                <span>BOTH 输出</span>
+                <button class="mini-btn" :class="{ active: tableBothStrategy === 'rows' }" type="button" @click="setTableBothStrategy('rows')">新增行</button>
+                <button class="mini-btn" :class="{ active: tableBothStrategy === 'columns' }" type="button" @click="setTableBothStrategy('columns')">新增列</button>
+              </div>
+              <div class="table-row-bulk">
+                <span>应用到本行</span>
+                <select v-model="tableRowBulkChoice">
+                  <option value="ours">OURS</option>
+                  <option value="theirs">THEIRS</option>
+                  <option value="both">BOTH</option>
+                  <option value="none">NONE</option>
+                </select>
+                <button class="mini-btn" type="button" @click="applySelectedTableRowChoice">应用</button>
+              </div>
+            </div>
+            <p class="table-detail-note">BOTH 默认新增一行保留 OURS 和 THEIRS 两份记录；切到新增列时，会在冲突列后插入 THEIRS 列。NONE 会让该候选格子留空。</p>
+          </section>
+        </div>
+
+        <div class="table-side-grid">
+          <section v-for="side in ['ours', 'theirs']" :key="side" class="table-side-pane" :class="side">
+            <div class="table-section-head">
+              <strong>{{ side === 'ours' ? 'OURS 左侧' : 'THEIRS 右侧' }}</strong>
+              <span>{{ side === 'ours' ? '当前分支版本' : '合入分支版本' }}</span>
+            </div>
+            <div class="table-sheet-wrap">
+              <table class="table-sheet">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th v-for="column in tableColumnIndexes" :key="column">{{ tableColumnLabel(column) }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in tableRowsWithDiff" :key="`${side}:${row[0]?.row}`">
+                    <th>
+                      <span>R{{ (row[0]?.row || 0) + 1 }}</span>
+                    </th>
+                    <td
+                      v-for="column in tableColumnIndexes"
+                      :key="`${side}:${row[0]?.row}:${column}`"
+                      :class="tableSideCellClass(row[column], side)"
+                      @click="row[column]?.kind === 'conflict' && setTableChoice(row[column].row, row[column].column, side)"
+                    >
+                      <span v-if="row[column]?.kind === 'conflict'" class="chosen-cell-badge">{{ tableSideChoiceLabel(row[column], side) }}</span>
+                      <span v-else-if="row[column]?.kind === `auto-${side}`" class="auto-merge-label">自动采用</span>
+                      <code>{{ tableSideCellValue(row[column], side) }}</code>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="table-preview-pane">
+          <div class="table-section-head">
+            <strong>候选预览</strong>
+            <span>{{ tableBothStrategy === 'rows' ? 'BOTH 会新增候选行。' : 'BOTH 会新增 THEIRS 列。' }}</span>
+          </div>
+          <div class="table-sheet-wrap" data-table-preview>
+            <table class="table-sheet preview-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th v-for="column in tablePreviewColumnIndexes" :key="column">{{ tableColumnLabel(column) }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, rowIndex) in tablePreviewRows" :key="`preview:${rowIndex}`">
+                  <th>{{ rowIndex === 0 ? 'HEADER' : `R${rowIndex}` }}</th>
+                  <td v-for="column in tablePreviewColumnIndexes" :key="`preview:${rowIndex}:${column}`" :class="{ 'table-cell-diff': rowIndex > 0 }">
+                    <code>{{ row[column] ?? "" }}</code>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         <div class="workbench-actions">
           <button class="btn" type="button" @click="saveTableCandidate">{{ labels.writeConflictCandidate }}</button>
           <div class="candidate-result" v-if="candidatePath">
             <span>候选文件已生成：<code>{{ candidatePath }}</code></span>
+            <button class="btn secondary apply-candidate-btn" type="button" :disabled="Boolean(busy) || applyingCandidatePath === activeConflictPath" @click="applyCurrentCandidate">{{ applyingCandidatePath === activeConflictPath ? '应用中...' : '应用候选并暂存' }}</button>
             <button class="btn secondary open-candidate-btn" type="button" @click="openGeneratedCandidate">打开候选文件</button>
           </div>
           <pre v-if="workbenchMessage" class="workbench-message">{{ workbenchMessage }}</pre>
@@ -935,6 +1256,7 @@ async function ensureCommitMessage({ force = false } = {}) {
           <button class="btn" type="button" @click="saveBinaryCandidate">生成 {{ binaryChoice.toUpperCase() }} 候选文件</button>
           <div class="candidate-result" v-if="candidatePath">
             <span>候选文件已生成：<code>{{ candidatePath }}</code></span>
+            <button class="btn secondary apply-candidate-btn" type="button" :disabled="Boolean(busy) || applyingCandidatePath === activeConflictPath" @click="applyCurrentCandidate">{{ applyingCandidatePath === activeConflictPath ? '应用中...' : '应用候选并暂存' }}</button>
             <button class="btn secondary open-candidate-btn" type="button" @click="openGeneratedCandidate">打开候选文件</button>
           </div>
           <pre v-if="workbenchMessage" class="workbench-message">{{ workbenchMessage }}</pre>
@@ -947,8 +1269,9 @@ async function ensureCommitMessage({ force = false } = {}) {
   <Teleport to="body">
     <div v-if="confirmAction" class="confirm-overlay" @click.self="cancelConfirm">
       <div class="confirm-dialog">
-        <h3>{{ confirmAction === 'push' ? '确认推送' : '确认同步' }}</h3>
+        <h3>{{ confirmAction === 'push' ? '确认推送' : confirmAction === 'continue-rebase-and-push' ? '确认继续变基并推送' : '确认同步' }}</h3>
         <p v-if="confirmAction === 'push'">即将推送到远端，请确认当前分支的提交已经完成。</p>
+        <p v-else-if="confirmAction === 'continue-rebase-and-push'">当前处于 rebase 流程。将执行 git rebase --continue，成功后直接推送到远端，不会再创建一遍普通提交。</p>
         <p v-else>即将获取远端最新状态并执行 rebase，本地提交会被变基。</p>
         <div class="confirm-actions">
           <button class="btn secondary" type="button" @click="cancelConfirm">取消</button>

@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  applyConflictCandidate,
   exportBinaryConflict,
   loadBinaryConflict,
   loadTableConflict,
@@ -65,6 +66,50 @@ test("text conflict workbench loads stages and writes a candidate without stagin
   const choices = JSON.parse(await readFile(path.join(repo, candidate.textCandidate.choices), "utf8"));
   assert.equal(choices.source, "line");
   assert.deepEqual(choices.lineChoices, [{ row: 1, choice: "both" }]);
+  assert.match(git(repo, ["status", "--short"]), /^UU tracked\.js/m);
+});
+
+test("conflict workbench applies a generated candidate back to the conflict file and stages it", async () => {
+  const repo = await createConflictRepo();
+  const candidate = await writeTextCandidate({
+    repoPath: repo,
+    filePath: "tracked.js",
+    content: "export const value = 5;\n",
+    source: "line",
+    lineChoices: [{ row: 1, choice: "theirs" }]
+  });
+
+  const applied = await applyConflictCandidate({
+    repoPath: repo,
+    filePath: "tracked.js",
+    candidatePath: candidate.textCandidate.candidate
+  });
+
+  assert.equal(applied.ok, true);
+  assert.deepEqual(applied.appliedConflict, {
+    path: "tracked.js",
+    candidate: candidate.textCandidate.candidate,
+    staged: true
+  });
+  assert.equal(await readFile(path.join(repo, "tracked.js"), "utf8"), "export const value = 5;\n");
+  const status = git(repo, ["status", "--short"]);
+  assert.match(status, /^M  tracked\.js/m);
+  assert.doesNotMatch(status, /^UU tracked\.js/m);
+});
+
+test("conflict workbench refuses to apply a candidate outside the backup area", async () => {
+  const repo = await createConflictRepo();
+  await writeFile(path.join(repo, "not-a-candidate.js"), "export const value = 9;\n", "utf8");
+
+  await assert.rejects(
+    () => applyConflictCandidate({
+      repoPath: repo,
+      filePath: "tracked.js",
+      candidatePath: "not-a-candidate.js"
+    }),
+    /candidate path must be inside \.git\/git-safe-commit-backups/
+  );
+
   assert.match(git(repo, ["status", "--short"]), /^UU tracked\.js/m);
 });
 

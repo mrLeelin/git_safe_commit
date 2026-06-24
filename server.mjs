@@ -7,6 +7,7 @@ import { detectInstalledAi } from "./lib/ai-installations.mjs";
 import { suggestCommitMessage } from "./lib/commit-message-suggester.mjs";
 import { defaultConfigPath, loadConfig, maskConfig, saveConfig } from "./lib/config.mjs";
 import {
+  applyConflictCandidate,
   exportBinaryConflict,
   loadBinaryConflict,
   loadTableConflict,
@@ -207,6 +208,20 @@ app.post("/api/conflict/binary/export", async (req, res, next) => {
   try {
     const result = await exportBinaryConflict({ repoPath: config.repoPath, filePath: req.body.path });
     appendLog("binary-conflict-export", { path: req.body.path, ours: result.binaryConflict?.ours, theirs: result.binaryConflict?.theirs });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/conflict/candidate/apply", async (req, res, next) => {
+  try {
+    const result = await applyConflictCandidate({
+      repoPath: config.repoPath,
+      filePath: req.body.path,
+      candidatePath: req.body.candidate
+    });
+    appendLog("conflict-candidate-applied", { path: result.appliedConflict?.path, candidate: result.appliedConflict?.candidate });
     res.json(result);
   } catch (error) {
     next(error);

@@ -97,6 +97,65 @@ test("workflow runner fetches remote refs directly without AI and refreshes stat
   assert.deepEqual(events.map((item) => item.data.phase), ["Fetching", "Idle"]);
 });
 
+test("workflow runner continues a resolved rebase conflict and pushes without creating a new commit", async () => {
+  const repo = await createRepo("gsc-rebase-runner-");
+  const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-rebase-remote-"));
+  const other = await mkdtemp(path.join(os.tmpdir(), "gsc-rebase-other-"));
+  git(remote, ["init", "--bare", "-b", "main"]);
+  git(repo, ["remote", "add", "origin", remote]);
+  git(repo, ["push", "-u", "origin", "main"]);
+  git(other, ["clone", remote, "."]);
+  git(other, ["config", "user.email", "remote@example.test"]);
+  git(other, ["config", "user.name", "Remote Test"]);
+
+  await writeFile(path.join(repo, "tracked.txt"), "local\n", "utf8");
+  git(repo, ["commit", "-am", "local change"]);
+  await writeFile(path.join(other, "tracked.txt"), "remote\n", "utf8");
+  git(other, ["commit", "-am", "remote change"]);
+  git(other, ["push"]);
+  git(repo, ["fetch", "--prune"]);
+  assert.throws(() => git(repo, ["rebase", "origin/main"]));
+  await writeFile(path.join(repo, "tracked.txt"), "local\n", "utf8");
+  git(repo, ["add", "tracked.txt"]);
+  const localCommitBeforeContinue = git(repo, ["rev-parse", "REBASE_HEAD"]).trim();
+
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+  const result = await runner.run("continue-rebase-and-push", { confirmed: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.continueRebase.ok, true);
+  assert.equal(result.push.ok, true);
+  assert.equal(result.summary.rebaseInProgress, false);
+  assert.equal(result.summary.cleanWorktree, true);
+  assert.equal(git(repo, ["log", "-1", "--pretty=%s"]).trim(), "local change");
+  assert.notEqual(git(repo, ["rev-parse", "HEAD"]).trim(), localCommitBeforeContinue);
+  assert.equal(git(repo, ["rev-parse", "HEAD"]).trim(), git(repo, ["rev-parse", "@{u}"]).trim());
+});
+
+test("workflow runner refuses continue-and-push outside an active rebase", async () => {
+  const repo = await createRepo("gsc-no-rebase-runner-");
+  await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
+  git(repo, ["add", "tracked.txt"]);
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  await assert.rejects(
+    () => runner.run("continue-rebase-and-push", { confirmed: true }),
+    /no active rebase/
+  );
+});
+
 test("workflow runner accepts ai-commit payload and exposes commit tools", async () => {
   const repo = await createRepo();
   await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");

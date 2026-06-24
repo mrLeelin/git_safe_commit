@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
 import {
+  applyConflictCandidate as applyConflictCandidateApi,
   chooseRepoFolder as chooseRepoFolderApi,
   loadAiInstallations,
   loadConfig,
@@ -108,6 +109,7 @@ const activeView = ref("workflow");
 const themeMode = ref("dark");
 const railCollapsed = ref(false);
 const commitResetKey = ref(0);
+const conflictCandidates = ref({});
 const view = reactive({
   config: null,
   state: null,
@@ -130,6 +132,12 @@ const appClasses = computed(() => [
 const summary = computed(() => view.result?.summary || null);
 const status = computed(() => view.result?.status || null);
 const blockers = computed(() => view.state?.blockers || summary.value?.blockers || []);
+const displayedBlockers = computed(() => {
+  const unmerged = status.value?.unmerged || [];
+  const candidateCount = unmerged.filter((path) => conflictCandidates.value[path]?.candidate).length;
+  const unmergedCount = unmerged.length;
+  return blockers.value.map((blocker) => formatBlocker(blocker, candidateCount, unmergedCount));
+});
 const recovery = computed(() => view.state?.activeRecovery || null);
 const repoName = computed(() => (view.config?.repoPath || "").split(/[\\/]/).filter(Boolean).at(-1) || "未配置仓库");
 const installedAi = computed(() => view.aiInstallations || []);
@@ -150,7 +158,13 @@ const files = computed(() => sections.value.flatMap((section) => section.files.m
   selectable: section.selectable
 }))));
 const selectableFiles = computed(() => files.value.filter((file) => file.selectable));
-const conflictFiles = computed(() => files.value.filter((file) => !file.selectable));
+const conflictFiles = computed(() => files.value
+  .filter((file) => !file.selectable)
+  .map((file) => ({
+    ...file,
+    candidate: conflictCandidates.value[file.path]?.candidate || "",
+    candidateType: conflictCandidates.value[file.path]?.type || ""
+  })));
 const setupItems = computed(() => [
   { label: "配置仓库", ok: Boolean(view.config?.repoPath), detail: view.config?.repoPath || "未配置" },
   { label: "选择 AI", ok: Boolean(selectedAi.value), detail: selectedAi.value ? `${selectedAi.value.label} 已就绪` : (view.config?.ai?.selected || "未选择") },
@@ -243,6 +257,35 @@ function setDetails(message) {
   view.details = message;
 }
 
+function rememberConflictCandidate(payload) {
+  if (!payload?.path || !payload?.candidate) return;
+  conflictCandidates.value = {
+    ...conflictCandidates.value,
+    [payload.path]: {
+      candidate: payload.candidate,
+      type: payload.type || "candidate"
+    }
+  };
+}
+
+function formatBlocker(blocker, candidateCount, unmergedCount) {
+  if (blocker === "unmerged files present") {
+    return candidateCount
+      ? `候选文件只是草稿，还没有应用到原冲突文件（已生成 ${candidateCount}/${unmergedCount}）。确认无误后，点击绿色候选行里的“应用候选并暂存”。`
+      : `还有 ${unmergedCount} 个 Git 冲突文件没有处理。`;
+  }
+  if (blocker === "conflict markers present") {
+    return "原文件仍包含冲突标记（<<<<<<< / ======= / >>>>>>>），Git 不能提交。";
+  }
+  if (blocker === "unstaged diff check failed") {
+    return "工作区检查未通过，通常是因为原文件里还有冲突标记或格式错误。";
+  }
+  if (blocker === "staged diff check failed") {
+    return "已暂存内容检查未通过，请先检查暂存区里的冲突标记或格式错误。";
+  }
+  return blocker;
+}
+
 async function runCommit(payload) {
   await runAction("commit", payload);
 }
@@ -312,6 +355,22 @@ async function writeBinaryCandidate(payload, done) {
   } catch (error) {
     view.details = `生成二进制候选失败: ${error.message}`;
     done({ ok: false, error: error.message });
+  }
+}
+
+async function applyConflictCandidate(payload, done) {
+  view.busy = "apply-candidate";
+  try {
+    const result = await applyConflictCandidateApi(payload);
+    view.details = JSON.stringify(result, null, 2);
+    log("候选已应用并暂存", { path: payload.path, candidate: payload.candidate });
+    done(result);
+    await runAction("inspect");
+  } catch (error) {
+    view.details = `应用候选失败: ${error.message}`;
+    done({ ok: false, error: error.message });
+  } finally {
+    if (view.busy === "apply-candidate") view.busy = "";
   }
 }
 
@@ -440,7 +499,7 @@ function publicPayload(payload) {
           :conflict-files="conflictFiles"
           :selected-ai="selectedAi"
           :config="view.config"
-          :blockers="blockers"
+          :blockers="displayedBlockers"
           :recovery="recovery"
           :logs="view.logs"
           :details="view.details"
@@ -457,8 +516,10 @@ function publicPayload(payload) {
           @write-table-candidate="writeTableCandidate"
           @load-binary-conflict="loadBinaryConflict"
           @write-binary-candidate="writeBinaryCandidate"
+          @apply-candidate="applyConflictCandidate"
           @open-repo-file="openRepoFile"
           @export-binary-conflict="exportBinaryConflict"
+          @candidate-created="rememberConflictCandidate"
           @suggest-message="suggestCommitMessage"
           @blocked="setDetails"
         />

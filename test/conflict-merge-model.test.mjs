@@ -6,7 +6,8 @@ import {
   buildLineMergeRows,
   composeLineDraft,
   composeTableDraft,
-  lineChoiceSummary
+  lineChoiceSummary,
+  tableChoiceSummary
 } from "../src/conflict-merge-model.js";
 
 test("buildLineMergeRows marks changed rows and defaults to keeping both sides", () => {
@@ -67,4 +68,36 @@ test("buildTableMerge flags same-cell conflicts and auto merges different cells"
   assert.equal(table.cells[1][3].kind, "auto-theirs");
   assert.equal(table.cells[1][3].value, "theirs");
   assert.equal(composeTableDraft(table), "id,name,score,note\n1,Alicia,11,theirs");
+});
+
+test("composeTableDraft writes table BOTH as a new row by default", () => {
+  const base = "id,name\n1,Alice\n";
+  const ours = "id,name\n1,Alicia\n";
+  const theirs = "id,name\n1,Ally\n";
+  const table = buildTableMerge(base, ours, theirs, { delimiter: "," });
+
+  table.cells[1][1].choice = "both";
+  assert.equal(composeTableDraft(table), "id,name\n1,Alicia\n1,Ally");
+  assert.deepEqual(tableChoiceSummary(table), [{
+    row: 1,
+    column: 1,
+    label: "B2",
+    choice: "both",
+    ours: "Alicia",
+    theirs: "Ally"
+  }]);
+
+  table.cells[1][1].choice = "none";
+  assert.equal(composeTableDraft(table), "id,name\n1,");
+});
+
+test("composeTableDraft can write table BOTH as a new column", () => {
+  const base = "id,name,score\n1,Alice,10\n";
+  const ours = "id,name,score\n1,Alicia,10\n";
+  const theirs = "id,name,score\n1,Ally,10\n";
+  const table = buildTableMerge(base, ours, theirs, { delimiter: "," });
+
+  table.cells[1][1].choice = "both";
+
+  assert.equal(composeTableDraft(table, { bothStrategy: "columns" }), "id,name,name_THEIRS,score\n1,Alicia,Ally,10");
 });

@@ -64,6 +64,10 @@ export async function writeBinaryCandidate(payload = {}) {
   return request("/api/conflict/binary/candidate", { method: "POST", body: JSON.stringify(payload) });
 }
 
+export async function applyConflictCandidate(payload = {}) {
+  return request("/api/conflict/candidate/apply", { method: "POST", body: JSON.stringify(payload) });
+}
+
 export async function exportBinaryConflict(payload = {}) {
   return request("/api/conflict/binary/export", { method: "POST", body: JSON.stringify(payload) });
 }

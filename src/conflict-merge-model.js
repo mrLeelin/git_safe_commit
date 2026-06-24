@@ -1,5 +1,5 @@
 const MergeChoices = new Set(["ours", "theirs", "both", "none"]);
-const TableChoices = new Set(["ours", "theirs"]);
+const TableChoices = new Set(["ours", "theirs", "both", "none"]);
 
 export function buildLineMergeRows(oursText = "", theirsText = "") {
   const ours = splitLines(oursText);
@@ -127,11 +127,17 @@ export function buildTableMerge(baseText = "", oursText = "", theirsText = "", o
   return { delimiter, rowCount, columnCount, cells, conflictCount, autoCount };
 }
 
-export function composeTableDraft(table) {
+export function composeTableDraft(table, options = {}) {
   const delimiter = table?.delimiter || ",";
-  return (table?.cells || [])
-    .map((row) => row.map((cell) => formatDelimitedCell(tableCellValue(cell), delimiter)).join(delimiter))
+  return composeTableRows(table, options)
+    .map((row) => row.map((value) => formatDelimitedCell(value, delimiter)).join(delimiter))
     .join("\n");
+}
+
+export function composeTableRows(table, options = {}) {
+  return options.bothStrategy === "columns"
+    ? composeTableRowsWithBothColumns(table)
+    : composeTableRowsWithBothRows(table);
 }
 
 export function tableChoiceSummary(table) {
@@ -239,8 +245,53 @@ function cellAt(table, row, column) {
   return table[row]?.[column] ?? "";
 }
 
-function tableCellValue(cell) {
+function composeTableRowsWithBothRows(table) {
+  return (table?.cells || []).flatMap((row) => {
+    const hasBoth = row.some(isDistinctBothCell);
+    const rows = [row.map((cell) => tableCellValue(cell, "ours"))];
+    if (hasBoth) rows.push(row.map((cell) => tableCellValue(cell, "theirs")));
+    return rows;
+  });
+}
+
+function composeTableRowsWithBothColumns(table) {
+  const cells = table?.cells || [];
+  const bothColumns = new Set();
+  for (const row of cells) {
+    for (const cell of row) {
+      if (isDistinctBothCell(cell)) bothColumns.add(cell.column);
+    }
+  }
+
+  return cells.map((row, rowIndex) => {
+    const output = [];
+    for (const cell of row) {
+      output.push(tableCellValue(cell, "ours"));
+      if (bothColumns.has(cell.column)) {
+        output.push(rowIndex === 0 ? bothColumnHeader(cell) : bothColumnValue(cell));
+      }
+    }
+    return output;
+  });
+}
+
+function bothColumnHeader(cell) {
+  const header = tableCellValue(cell, "ours") || columnName(cell?.column ?? 0);
+  return `${header}_THEIRS`;
+}
+
+function bothColumnValue(cell) {
+  return isDistinctBothCell(cell) ? cell.theirs : "";
+}
+
+function isDistinctBothCell(cell) {
+  return cell?.kind === "conflict" && cell.choice === "both" && cell.theirs !== cell.ours;
+}
+
+function tableCellValue(cell, bothSide = "ours") {
   if (cell?.kind === "conflict") {
+    if (cell.choice === "both") return bothSide === "theirs" ? cell.theirs : cell.ours;
+    if (cell.choice === "none") return "";
     return cell.choice === "theirs" ? cell.theirs : cell.ours;
   }
   return cell?.value ?? "";
