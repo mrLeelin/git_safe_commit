@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -192,13 +192,25 @@ test("workflow runner blocks direct push without browser confirmation", async ()
   assert.equal(result.reason, "push confirmation required");
 });
 
-test("workflow runner refuses direct sync when local worktree is dirty", async () => {
+test("workflow runner stashes dirty worktree during sync, restores it, and removes temporary recovery", async () => {
   const repo = await createRepo("gsc-sync-dirty-runner-");
   const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-sync-dirty-remote-"));
+  const other = await mkdtemp(path.join(os.tmpdir(), "gsc-sync-dirty-other-"));
   git(remote, ["init", "--bare", "-b", "main"]);
   git(repo, ["remote", "add", "origin", remote]);
   git(repo, ["push", "-u", "origin", "main"]);
+  git(other, ["clone", remote, "."]);
+  git(other, ["config", "user.email", "remote@example.test"]);
+  git(other, ["config", "user.name", "Remote Test"]);
+  await writeFile(path.join(repo, "local.txt"), "local\n", "utf8");
+  git(repo, ["add", "local.txt"]);
+  git(repo, ["commit", "-m", "local change"]);
+  await writeFile(path.join(other, "remote.txt"), "remote\n", "utf8");
+  git(other, ["add", "remote.txt"]);
+  git(other, ["commit", "-m", "remote change"]);
+  git(other, ["push"]);
   await writeFile(path.join(repo, "tracked.txt"), "dirty\n", "utf8");
+  await writeFile(path.join(repo, "scratch.txt"), "scratch\n", "utf8");
   const runner = createWorkflowRunner({
     config: {
       repoPath: repo,
@@ -207,11 +219,28 @@ test("workflow runner refuses direct sync when local worktree is dirty", async (
     }
   });
 
-  await assert.rejects(
-    () => runner.run("sync", {}),
-    /clean worktree/
-  );
+  const result = await runner.run("sync", {});
+
+  assert.equal(result.ok, true);
+  assert.equal(result.rebase.ok, true);
+  assert.equal(result.syncStash.stash.ok, true);
+  assert.equal(result.syncStash.apply.ok, true);
+  assert.equal(result.syncStash.drop.ok, true);
+  assert.equal(result.recoveryCleanup.branch.ok, true);
+  assert.equal(result.recoveryCleanup.backupDirRemoved, true);
+  assert.equal(result.summary.behind, 0);
+  assert.equal(result.summary.ahead, 1);
+  assert.equal(result.summary.cleanWorktree, false);
+  assert.equal(normalizeNewlines(await readFile(path.join(repo, "tracked.txt"), "utf8")), "dirty\n");
+  assert.equal(normalizeNewlines(await readFile(path.join(repo, "scratch.txt"), "utf8")), "scratch\n");
+  assert.equal(git(repo, ["stash", "list"]).trim(), "");
+  assert.equal(git(repo, ["branch", "--list", result.recovery.backupBranch]).trim(), "");
+  await assert.rejects(access(path.join(repo, result.recovery.backupDir)));
 });
+
+function normalizeNewlines(text) {
+  return text.replace(/\r\n/g, "\n");
+}
 
 test("workflow runner continues a resolved rebase conflict and pushes without creating a new commit", async () => {
   const repo = await createRepo("gsc-rebase-runner-");

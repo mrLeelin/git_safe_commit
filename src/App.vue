@@ -416,7 +416,7 @@ async function chooseRepoFolder(done) {
       return;
     }
     done?.(result.path || "");
-    view.configState = "已选择，记得保存";
+    view.configState = result.path ? "已选择，正在保存" : "已取消选择";
   } catch (error) {
     view.configState = error.message;
     done?.("");

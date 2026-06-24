@@ -320,7 +320,7 @@ function isTextConflict(file) {
 }
 
 function isTableConflict(file) {
-  return /\.(csv|tsv)$/i.test(file.path);
+  return /\.(csv|tsv|xlsx)$/i.test(file.path);
 }
 
 async function openTextWorkbench(path) {

@@ -4,6 +4,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import ExcelJS from "exceljs";
 
 import {
   applyConflictCandidate,
@@ -39,6 +40,33 @@ async function createConflictRepo() {
   await writeFile(path.join(repo, "tracked.js"), "export const value = 3;\n", "utf8");
   await writeFile(path.join(repo, "data.csv"), "id,name,score,note\n1,Alicia,11,base\n", "utf8");
   await writeFile(path.join(repo, "data.bytes"), Buffer.from([3, 2, 3, 4]));
+  git(repo, ["commit", "-am", "main edit"]);
+  assert.throws(() => git(repo, ["merge", "feature"]));
+  return repo;
+}
+
+async function createSpreadsheetConflictRepo() {
+  const repo = await mkdtemp(path.join(os.tmpdir(), "gsc-xlsx-conflict-workbench-"));
+  git(repo, ["init", "-b", "main"]);
+  git(repo, ["config", "user.email", "tool@example.test"]);
+  git(repo, ["config", "user.name", "Tool Test"]);
+  await writeWorkbook(path.join(repo, "data.xlsx"), [
+    ["id", "name", "score", "note"],
+    [1, "Alice", { formula: "5+5", result: 10 }, "base"]
+  ]);
+  git(repo, ["add", "."]);
+  git(repo, ["commit", "-m", "initial"]);
+  git(repo, ["switch", "-c", "feature"]);
+  await writeWorkbook(path.join(repo, "data.xlsx"), [
+    ["id", "name", "score", "note"],
+    [1, "Ally", { formula: "5+5", result: 10 }, "theirs"]
+  ]);
+  git(repo, ["commit", "-am", "feature edit"]);
+  git(repo, ["switch", "main"]);
+  await writeWorkbook(path.join(repo, "data.xlsx"), [
+    ["id", "name", "score", "note"],
+    [1, "Alicia", { formula: "5+6", result: 11 }, "base"]
+  ]);
   git(repo, ["commit", "-am", "main edit"]);
   assert.throws(() => git(repo, ["merge", "feature"]));
   return repo;
@@ -137,6 +165,40 @@ test("table conflict workbench loads CSV stages and writes merged candidate with
   assert.match(git(repo, ["status", "--short"]), /^UU data\.csv/m);
 });
 
+test("table conflict workbench loads XLSX stages and writes an XLSX candidate without staging", async () => {
+  const repo = await createSpreadsheetConflictRepo();
+
+  const loaded = await loadTableConflict({ repoPath: repo, filePath: "data.xlsx" });
+  const candidate = await writeTableCandidate({
+    repoPath: repo,
+    filePath: "data.xlsx",
+    content: "id,name,score,note\n1,Ally,11,theirs\n",
+    source: "table",
+    cellChoices: [{ row: 1, column: 1, label: "B2", choice: "theirs" }]
+  });
+  const rows = await readWorkbookRows(path.join(repo, candidate.tableCandidate.candidate));
+
+  assert.equal(loaded.ok, true);
+  assert.equal(loaded.tableConflict.path, "data.xlsx");
+  assert.equal(loaded.tableConflict.merge.conflictCount, 1);
+  assert.equal(loaded.tableConflict.merge.autoCount, 2);
+  assert.equal(loaded.tableConflict.merge.cells[1][1].kind, "conflict");
+  assert.match(candidate.tableCandidate.candidate, /\.git\/git-safe-commit-backups\/.+\/table-merge-candidates\/data\.merged\..+\.xlsx/);
+  assert.deepEqual(rows, [
+    ["id", "name", "score", "note"],
+    ["1", "Ally", "11", "theirs"]
+  ]);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await readFile(path.join(repo, candidate.tableCandidate.candidate)));
+  const sheet = workbook.worksheets[0];
+  assert.equal(sheet.getColumn(2).width, 24);
+  assert.equal(sheet.getRow(2).height, 32);
+  assert.equal(sheet.getCell("B2").fill.fgColor.argb, "FF123456");
+  assert.equal(sheet.getCell("B2").font.color.argb, "FFFFFFFF");
+  assert.deepEqual(sheet.getCell("C2").value, { formula: "5+6", result: 11 });
+  assert.match(git(repo, ["status", "--short"]), /^UU data\.xlsx/m);
+});
+
 test("binary conflict workbench exports ours and theirs without resolving", async () => {
   const repo = await createConflictRepo();
 
@@ -149,6 +211,47 @@ test("binary conflict workbench exports ours and theirs without resolving", asyn
   assert.deepEqual([...await readFile(path.join(repo, result.binaryConflict.theirs))], [2, 2, 3, 4]);
   assert.match(git(repo, ["status", "--short"]), /^UU data\.bytes/m);
 });
+
+async function writeWorkbook(filePath, rows) {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Sheet1");
+  for (const row of rows) sheet.addRow(row);
+  sheet.getColumn(2).width = 24;
+  sheet.getRow(2).height = 32;
+  sheet.getCell("B2").fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF123456" }
+  };
+  sheet.getCell("B2").font = {
+    name: "Consolas",
+    bold: true,
+    color: { argb: "FFFFFFFF" }
+  };
+  sheet.getCell("B2").alignment = { horizontal: "center" };
+  await workbook.xlsx.writeFile(filePath);
+}
+
+async function readWorkbookRows(filePath) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await readFile(filePath));
+  const sheet = workbook.worksheets[0];
+  const rows = [];
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    const values = [];
+    for (let column = 1; column <= sheet.actualColumnCount; column++) {
+      values.push(workbookCellText(row.getCell(column).value));
+    }
+    rows.push(values);
+  });
+  return rows;
+}
+
+function workbookCellText(value) {
+  if (value == null) return "";
+  if (typeof value === "object" && "result" in value) return String(value.result ?? "");
+  return String(value);
+}
 
 test("binary conflict workbench loads sides and writes selected side as candidate without resolving", async () => {
   const repo = await createConflictRepo();

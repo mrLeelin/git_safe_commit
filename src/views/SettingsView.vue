@@ -35,7 +35,10 @@ function saveSettings() {
 
 function chooseRepoFolder() {
   emit("choose-repo-folder", (path) => {
-    if (path) form.repoPath = path;
+    if (path) {
+      form.repoPath = path;
+      emit("save", buildSettingsPayload(form));
+    }
   });
 }
 

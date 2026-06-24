@@ -83,6 +83,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(settingsView, /fillSettingsFormFromConfig\(form, config/);
   assert.match(settingsView, /function chooseRepoFolder\(\)/);
   assert.match(settingsView, /emit\("choose-repo-folder"/);
+  assert.match(settingsView, /if \(path\) \{\s*form\.repoPath = path;\s*emit\("save", buildSettingsPayload\(form\)\);\s*\}/);
   assert.match(settingsView, /class="repo-path-picker wide"/);
   assert.match(settingsView, /v-model="form\.repoPath"/);
   assert.match(settingsView, /@click="chooseRepoFolder"/);
@@ -152,6 +153,9 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /function openTextWorkbench\(path\)/);
   assert.match(workflowView, /function openTableWorkbench\(path\)/);
   assert.match(workflowView, /function openBinaryWorkbench\(path\)/);
+  assert.match(workflowView, /csv\|tsv\|xlsx/);
+  assert.match(app, /action === "sync"/);
+  assert.match(app, /loadConfigAndState\(\), loadGraph\(\)/);
   assert.match(workflowView, /function saveTextCandidate\(\)/);
   assert.match(workflowView, /function saveTableCandidate\(\)/);
   assert.match(workflowView, /function saveBinaryCandidate\(\)/);
