@@ -73,15 +73,37 @@ export async function exportBinaryConflict(payload = {}) {
 }
 
 export function openEvents({ onOpen, onError, onState, onLog, onPhase } = {}) {
-  const events = new EventSource("/api/events");
-  events.onopen = () => onOpen?.();
-  events.onerror = () => onError?.("事件流断开，浏览器会自动重连");
-  events.addEventListener("state", (event) => onState?.(JSON.parse(event.data)));
-  events.addEventListener("log", (event) => onLog?.(JSON.parse(event.data)));
-  events.addEventListener("phase", (event) => onPhase?.(JSON.parse(event.data)));
-  events.addEventListener("ai-action", (event) => onLog?.(JSON.parse(event.data), "ai-action"));
-  events.addEventListener("ai-result", (event) => onLog?.(JSON.parse(event.data), "ai-result"));
-  return events;
+  let socket;
+  let reconnectTimer;
+  let closed = false;
+
+  const connect = () => {
+    socket = new WebSocket(eventSocketUrl("/api/events"));
+    socket.onopen = () => onOpen?.();
+    socket.onerror = () => onError?.("事件通道断开，正在重连");
+    socket.onclose = () => {
+      if (closed) return;
+      onError?.("事件通道断开，正在重连");
+      reconnectTimer = setTimeout(connect, 1000);
+    };
+    socket.onmessage = (message) => {
+      const { event, data } = JSON.parse(message.data);
+      if (event === "state") onState?.(data);
+      else if (event === "phase") onPhase?.(data);
+      else if (event === "ai-action" || event === "ai-result") onLog?.(data, event);
+      else onLog?.(data, event || "log");
+    };
+  };
+
+  connect();
+
+  return {
+    close() {
+      closed = true;
+      clearTimeout(reconnectTimer);
+      socket?.close();
+    }
+  };
 }
 
 async function request(path, options = {}) {
@@ -95,4 +117,9 @@ async function request(path, options = {}) {
   }
   if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
   return data;
+}
+
+function eventSocketUrl(path) {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}${path}`;
 }

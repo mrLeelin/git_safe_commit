@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import {
   buildTableMerge,
   buildLineMergeRows,
@@ -56,6 +56,9 @@ const candidateResultsByPath = ref({});
 const workbenchMessage = ref("");
 const candidateHighlight = ref(null);
 const applyingCandidatePath = ref("");
+const tableSideScrollers = { ours: null, theirs: null };
+const tablePreviewScroller = ref(null);
+let syncingTableSideScroll = false;
 const workbenchActive = computed(() => Boolean(activeConflictPath.value));
 
 const selectedFileCount = computed(() => selectedPaths.value.length);
@@ -241,7 +244,7 @@ function confirmExecute() {
   } else if (action === "continue-rebase-and-push") {
     emit("action", "continue-rebase-and-push", { confirmed: true });
   } else if (action === "sync") {
-    emit("action", "sync");
+    emit("action", "ai-sync");
   }
 }
 
@@ -461,6 +464,23 @@ function syncCandidateHighlightScroll(event) {
   candidateHighlight.value.scrollLeft = event.target.scrollLeft;
 }
 
+function setTableSideScroller(side, element) {
+  tableSideScrollers[side] = element;
+}
+
+function syncTableSideScroll(side, event) {
+  if (syncingTableSideScroll) return;
+  const targetSide = side === "ours" ? "theirs" : "ours";
+  const target = tableSideScrollers[targetSide];
+  if (!target) return;
+  syncingTableSideScroll = true;
+  target.scrollTop = event.target.scrollTop;
+  target.scrollLeft = event.target.scrollLeft;
+  requestAnimationFrame(() => {
+    syncingTableSideScroll = false;
+  });
+}
+
 function setTableChoice(rowIndex, columnIndex, choice) {
   if (!isTableChoice(choice) || !tableMerge.value) return;
   const cell = tableMerge.value.cells?.[rowIndex]?.[columnIndex];
@@ -469,11 +489,58 @@ function setTableChoice(rowIndex, columnIndex, choice) {
   selectedTableCellId.value = cell.id;
   tableRowBulkChoice.value = choice;
   refreshTableCandidate();
+  scrollTablePanesToCell(cell);
 }
 
 function selectTableConflict(cell) {
   selectedTableCellId.value = cell?.id || "";
   if (isTableChoice(cell?.choice)) tableRowBulkChoice.value = cell.choice;
+  scrollTablePanesToCell(cell);
+}
+
+function scrollTablePanesToCell(cell) {
+  if (!cell) return;
+  nextTick(() => {
+    scrollTableScrollerToCell(tableSideScrollers.ours, cell);
+    scrollTableScrollerToCell(tableSideScrollers.theirs, cell);
+    scrollTableScrollerToCell(tablePreviewScroller.value, {
+      ...cell,
+      row: tablePreviewRowForCell(cell),
+      column: tablePreviewColumnForCell(cell)
+    });
+  });
+}
+
+function scrollTableScrollerToCell(scroller, cell) {
+  const target = scroller?.querySelector?.(`[data-table-row="${cell.row}"][data-table-column="${cell.column}"]`);
+  if (!target) return;
+  scroller.scrollTop = Math.max(0, target.offsetTop - (scroller.clientHeight - target.clientHeight) / 2);
+  scroller.scrollLeft = Math.max(0, target.offsetLeft - (scroller.clientWidth - target.clientWidth) / 2);
+}
+
+function tablePreviewRowForCell(cell) {
+  if (tableBothStrategy.value !== "rows") return cell.row;
+  let outputRow = 0;
+  for (let rowIndex = 0; rowIndex < cell.row; rowIndex++) {
+    const row = tableMerge.value?.cells?.[rowIndex] || [];
+    outputRow += row.some(isDistinctBothTableCell) ? 2 : 1;
+  }
+  return outputRow;
+}
+
+function tablePreviewColumnForCell(cell) {
+  if (tableBothStrategy.value !== "columns") return cell.column;
+  const shiftedColumns = new Set();
+  for (const row of tableMerge.value?.cells || []) {
+    for (const candidate of row) {
+      if (candidate.column < cell.column && isDistinctBothTableCell(candidate)) shiftedColumns.add(candidate.column);
+    }
+  }
+  return cell.column + shiftedColumns.size;
+}
+
+function isDistinctBothTableCell(cell) {
+  return cell?.kind === "conflict" && cell.choice === "both" && cell.ours !== cell.theirs;
 }
 
 function setTableRowChoice(rowIndex, choice) {
@@ -485,6 +552,7 @@ function setTableRowChoice(rowIndex, choice) {
   const firstConflict = row.find((cell) => cell.kind === "conflict");
   if (firstConflict) selectedTableCellId.value = firstConflict.id;
   refreshTableCandidate();
+  scrollTablePanesToCell(firstConflict);
 }
 
 function applySelectedTableRowChoice() {
@@ -1157,7 +1225,7 @@ async function ensureCommitMessage({ force = false } = {}) {
               <strong>{{ side === 'ours' ? 'OURS 左侧' : 'THEIRS 右侧' }}</strong>
               <span>{{ side === 'ours' ? '当前分支版本' : '合入分支版本' }}</span>
             </div>
-            <div class="table-sheet-wrap">
+            <div class="table-sheet-wrap" :ref="(el) => setTableSideScroller(side, el)" @scroll="syncTableSideScroll(side, $event)">
               <table class="table-sheet">
                 <thead>
                   <tr>
@@ -1173,6 +1241,9 @@ async function ensureCommitMessage({ force = false } = {}) {
                     <td
                       v-for="column in tableColumnIndexes"
                       :key="`${side}:${row[0]?.row}:${column}`"
+                      :data-table-kind="side"
+                      :data-table-row="row[column]?.row"
+                      :data-table-column="column"
                       :class="tableSideCellClass(row[column], side)"
                       @click="row[column]?.kind === 'conflict' && setTableChoice(row[column].row, row[column].column, side)"
                     >
@@ -1192,7 +1263,7 @@ async function ensureCommitMessage({ force = false } = {}) {
             <strong>候选预览</strong>
             <span>{{ tableBothStrategy === 'rows' ? 'BOTH 会新增候选行。' : 'BOTH 会新增 THEIRS 列。' }}</span>
           </div>
-          <div class="table-sheet-wrap" data-table-preview>
+          <div ref="tablePreviewScroller" class="table-sheet-wrap" data-table-preview>
             <table class="table-sheet preview-table">
               <thead>
                 <tr>
@@ -1203,7 +1274,14 @@ async function ensureCommitMessage({ force = false } = {}) {
               <tbody>
                 <tr v-for="(row, rowIndex) in tablePreviewRows" :key="`preview:${rowIndex}`">
                   <th>{{ rowIndex === 0 ? 'HEADER' : `R${rowIndex + 1}` }}</th>
-                  <td v-for="column in tablePreviewColumnIndexes" :key="`preview:${rowIndex}:${column}`" :class="{ 'table-cell-diff': rowIndex > 0 }">
+                  <td
+                    v-for="column in tablePreviewColumnIndexes"
+                    :key="`preview:${rowIndex}:${column}`"
+                    data-table-kind="preview"
+                    :data-table-row="rowIndex"
+                    :data-table-column="column"
+                    :class="{ 'table-cell-diff': rowIndex > 0 }"
+                  >
                     <code>{{ row[column] ?? "" }}</code>
                   </td>
                 </tr>

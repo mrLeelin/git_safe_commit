@@ -2,6 +2,7 @@ import express from "express";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { WebSocketServer, WebSocket } from "ws";
 
 import { detectInstalledAi } from "./lib/ai-installations.mjs";
 import { suggestCommitMessage } from "./lib/commit-message-suggester.mjs";
@@ -103,18 +104,6 @@ app.get("/api/git/commit/:hash", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
-
-app.get("/api/events", (req, res) => {
-  res.writeHead(200, {
-    "content-type": "text/event-stream; charset=utf-8",
-    "cache-control": "no-store",
-    "connection": "keep-alive",
-    "access-control-allow-origin": "*"
-  });
-  eventClients.add(res);
-  writeEvent(res, "state", { state: runner.state, logs: sessionLogs.slice(-200) });
-  req.on("close", () => eventClients.delete(res));
 });
 
 app.post("/api/ai/suggest-message", async (req, res, next) => {
@@ -251,10 +240,17 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ ok: false, error: error.message });
 });
 
-app.listen(config.server.port, config.server.host, () => {
+const server = app.listen(config.server.port, config.server.host, () => {
   const url = `http://${config.server.host}:${config.server.port}`;
   console.log(`git-safe-commit-tool listening at ${url}`);
   console.log(`repo: ${config.repoPath}`);
+});
+const eventServer = new WebSocketServer({ server, path: "/api/events" });
+eventServer.on("connection", (socket) => {
+  eventClients.add(socket);
+  writeEvent(socket, "state", { state: runner.state, logs: sessionLogs.slice(-200) });
+  socket.on("close", () => eventClients.delete(socket));
+  socket.on("error", () => eventClients.delete(socket));
 });
 
 function createRunner(nextConfig) {
@@ -281,9 +277,12 @@ function broadcast(event, data) {
   }
 }
 
-function writeEvent(res, event, data) {
-  res.write(`event: ${event}\n`);
-  res.write(`data: ${JSON.stringify(data)}\n\n`);
+function writeEvent(socket, event, data) {
+  if (socket.readyState !== WebSocket.OPEN) {
+    eventClients.delete(socket);
+    return;
+  }
+  socket.send(JSON.stringify({ event, data }));
 }
 
 function openLocalFile(filePath) {

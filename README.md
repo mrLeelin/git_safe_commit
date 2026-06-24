@@ -1,44 +1,101 @@
 # git-safe-commit-tool
 
-独立浏览器工具，用于在本地仓库中执行安全的 git-safe-commit 工作流。它不依赖 Codex skill 输入框；用户通过浏览器按钮、状态面板、日志和确认区操作。
+一个独立的本地浏览器工具，用来对指定 Git 仓库执行更安全的提交、变基、冲突处理和推送前检查流程。它不依赖 Codex skill 输入框运行，日常操作都在浏览器 UI 中完成。
 
-本工程内置一份参考 skill：`.kiro/skills/git-safe-commit`。浏览器工具不依赖该 skill 运行；它用于保留原始工作流、安全规则和冲突工作台设计。
+## 快速启动
 
-## 启动
+要求：Windows、Git、Node.js 18+。
+
+最简单的启动方式：
 
 ```powershell
-node server.mjs
+.\start-git-safe-commit.bat
 ```
 
-打开：
+脚本会自动：
+
+- 检查 Node.js/npm。
+- 首次运行时安装依赖。
+- 按 `config.json` 的端口打开浏览器；没有配置时默认打开 `http://127.0.0.1:19347`。
+- 启动本地服务。
+
+也可以手动启动：
+
+```powershell
+npm install
+npm start
+```
+
+默认地址：
 
 ```text
-http://127.0.0.1:8080
+http://127.0.0.1:19347
 ```
 
-## 配置
+## 首次配置
 
-打开页面后，在右侧 **设置** 面板填写 URL、API Key、模型和仓库路径，然后点击 **保存设置**。设置会写入本地 `config.json`。
+打开页面后进入设置页，填写：
 
-`config.json` 是本地私有配置，已被本目录 `.gitignore` 忽略。不要提交真实 API Key。页面读取配置时会脱敏显示 Key；保存时如果 API Key 留空，会保留已经保存的 Key。
+- `repoPath`：要操作的目标 Git 仓库绝对路径。
+- AI Provider：Codex、Claude 或 Gemini。
+- `baseUrl` / `apiKey` / `model`：对应供应商的接口配置。
+- `workflow.requireConfirmBeforePush`：是否在推送前强制人工确认，建议保持开启。
 
-关键字段：
+配置会保存到本地 `config.json`。该文件已被 `.gitignore` 忽略，不要提交真实 API Key 或个人仓库路径。
 
-- `repoPath`：目标 Git 仓库绝对路径。
-- `ai.baseUrl`：OpenAI 兼容 Chat Completions API 地址。
-- `ai.apiKey`：本地 API Key。
-- `ai.model`：模型名称。
-- `workflow.requireConfirmBeforePush`：保留 push 前确认策略。
+可以参考 `config.example.json` 创建自己的配置。
+
+## 分发给别人
+
+推荐把整个目录发给对方，或放到一个内部 Git 仓库。对方只需要：
+
+```powershell
+git clone <your-repo-url>
+cd git_safe_commit_tool
+.\start-git-safe-commit.bat
+```
+
+如果不是通过 Git 分发，也可以压缩整个目录，但建议不要包含：
+
+- `node_modules/`
+- `config.json`
+- `dist/`
+- `output/`
+
+对方首次启动后在页面里配置自己的仓库路径和 API Key。
+
+## 打包
+
+生成可分发 zip：
+
+```powershell
+.\package-release.bat
+```
+
+脚本会依次执行：
+
+- `npm test`
+- `npm run build`
+- 复制运行时文件到 `output/git-safe-commit-tool/`
+- 生成 `output/git-safe-commit-tool-<时间戳>.zip`
+
+zip 不包含 `config.json`、`node_modules/`、`.git/`、`src/`、`test/`。接收方解压后运行：
+
+```powershell
+.\start-git-safe-commit.bat
+```
 
 ## 安全边界
+
+这个工具的核心目标是保护 Git 操作边界：
 
 - 不执行 `git pull`。
 - 不执行 `git reset --hard`。
 - 不执行 `git clean`。
 - 不执行 `git stash pop`。
 - 不执行 force push。
-- 所有 Git 命令走 `execFile("git", args)`，不拼 shell 字符串。
-- rebase 前必须创建恢复点。
+- Git 命令统一走 `execFile("git", args)` 参数数组，不拼 shell 字符串。
+- rebase-capable 工作流前必须创建恢复点。
 - Excel、Unity 资源、二进制、密钥、签名文件和语义冲突需要人工确认。
 
 ## 验证

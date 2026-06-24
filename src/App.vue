@@ -255,7 +255,7 @@ async function runAction(action, payload = {}) {
     const result = await runActionApi(action, payload);
     if (result.status || result.summary) view.result = { status: result.status, summary: result.summary };
     view.details = JSON.stringify(result, null, 2);
-    log("操作完成", { action: labelAction(action) });
+    log("操作完成", { action: labelAction(action), message: result.message || "" });
     if (repositoryChangingActions.has(action)) {
       await refreshRepositoryView();
       if (action === "commit" || action === "ai-commit") commitResetKey.value += 1;

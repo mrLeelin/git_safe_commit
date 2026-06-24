@@ -2,7 +2,7 @@
   "repoPath": "E:\\Project\\Work\\JellybeanUnity",
   "server": {
     "host": "127.0.0.1",
-    "port": 8080
+    "port": 19347
   },
   "ai": {
     "activeProvider": "codex",

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { buildCommitGraphRows } from "../graph-layout.js";
 import { loadCommitDetail } from "../client/api.js";
 
@@ -17,6 +17,7 @@ const graphRows = computed(() => buildCommitGraphRows(props.commits));
 const selectedHash = ref("");
 const commitDetail = ref(null);
 const loadingDetail = ref(false);
+let detailRequestId = 0;
 
 function statusIcon(status) {
   if (status.startsWith("A")) return "+";
@@ -33,23 +34,50 @@ function statusLabel(status) {
   return status;
 }
 
-async function selectCommit(hash) {
-  if (selectedHash.value === hash) {
+function authorInitial(author) {
+  const value = String(author || "").trim();
+  return value ? value.slice(0, 1).toUpperCase() : "?";
+}
+
+async function selectCommit(hash, options = {}) {
+  if (!options.force && selectedHash.value === hash) {
     selectedHash.value = "";
     commitDetail.value = null;
     return;
   }
   selectedHash.value = hash;
   loadingDetail.value = true;
+  const requestId = ++detailRequestId;
   try {
     const result = await loadCommitDetail(hash);
-    commitDetail.value = result.commit;
+    if (requestId === detailRequestId) {
+      commitDetail.value = result.commit;
+    }
   } catch (error) {
-    commitDetail.value = null;
+    if (requestId === detailRequestId) {
+      commitDetail.value = null;
+    }
   } finally {
-    loadingDetail.value = false;
+    if (requestId === detailRequestId) {
+      loadingDetail.value = false;
+    }
   }
 }
+
+watch(
+  graphRows,
+  (rows) => {
+    if (!rows.length) {
+      selectedHash.value = "";
+      commitDetail.value = null;
+      return;
+    }
+    if (!selectedHash.value || !rows.some((row) => row.hash === selectedHash.value)) {
+      void selectCommit(rows[0].hash, { force: true });
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -72,6 +100,7 @@ async function selectCommit(hash) {
         <div class="graph-branchbar">
           <span class="graph-menu">=</span>
           <span class="branch-name">{{ branch || "main" }}</span>
+          <span class="graph-column-title">提交信息</span>
         </div>
         <div class="graph-body">
           <div class="graph-sidebar"><span>*</span></div>
@@ -107,11 +136,16 @@ async function selectCommit(hash) {
               </div>
               <div class="commit-main">
                 <div class="commit-title">
-                  <span v-for="ref in commit.refs" :key="ref" class="branch" :class="{ current: commit.isHead && ref === commit.refs[0] }">{{ ref }}</span>
+                  <span
+                    v-for="ref in commit.refs"
+                    :key="ref"
+                    class="branch"
+                    :class="{ current: commit.isHead && ref === commit.refs[0], stash: ref.includes('stash'), remote: ref.startsWith('origin/') || ref.startsWith('refs/remotes/') }"
+                  >{{ ref }}</span>
                   <span class="subject">{{ commit.subject }}</span>
                 </div>
               </div>
-              <div class="commit-author"><span class="avatar">GT</span>{{ commit.author }}</div>
+              <div class="commit-author"><span class="avatar">{{ authorInitial(commit.author) }}</span>{{ commit.author }}</div>
               <code class="commit-hash">{{ commit.shortHash }}</code>
               <div class="commit-date">{{ commit.date }}</div>
             </div>

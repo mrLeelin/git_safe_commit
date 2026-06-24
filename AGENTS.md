@@ -9,7 +9,7 @@ workflow against a configured Git repository.
 
 Key entry points:
 
-- `server.mjs` starts the local HTTP server and exposes the browser UI plus JSON/SSE APIs.
+- `server.mjs` starts the local HTTP server and exposes the browser UI plus JSON APIs and WebSocket events.
 - `public/` contains the browser interface.
 - `lib/config.mjs` loads, normalizes, masks, and saves local configuration.
 - `lib/git-executor.mjs` is the Git command safety boundary.
@@ -76,7 +76,7 @@ The browser UI is an operational tool, not a marketing page.
 
 - Keep status, blockers, recovery state, logs, and confirmation controls visible and direct.
 - Do not hide destructive or remote-affecting actions behind ambiguous labels.
-- For long-running actions, emit useful SSE state/log updates from the server.
+- For long-running actions, emit useful WebSocket state/log updates from the server.
 - Keep text compact and task-oriented.
 
 ## Verification

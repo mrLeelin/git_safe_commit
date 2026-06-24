@@ -69,21 +69,22 @@ export function buildTableMerge(baseText = "", oursText = "", theirsText = "", o
   const base = parseDelimitedTable(baseText, delimiter);
   const ours = parseDelimitedTable(oursText, delimiter);
   const theirs = parseDelimitedTable(theirsText, delimiter);
-  const rowCount = Math.max(base.length, ours.length, theirs.length);
   const columnCount = Math.max(
     ...[base, ours, theirs].flatMap((table) => table.map((row) => row.length)),
     0
   );
+  const alignedRows = alignTableRows(base, ours, theirs, columnCount);
   const cells = [];
   let conflictCount = 0;
   let autoCount = 0;
 
-  for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+  for (let rowIndex = 0; rowIndex < alignedRows.length; rowIndex++) {
+    const alignedRow = alignedRows[rowIndex];
     const row = [];
     for (let columnIndex = 0; columnIndex < columnCount; columnIndex++) {
-      const baseValue = cellAt(base, rowIndex, columnIndex);
-      const oursValue = cellAt(ours, rowIndex, columnIndex);
-      const theirsValue = cellAt(theirs, rowIndex, columnIndex);
+      const baseValue = cellAtRow(alignedRow.base, columnIndex);
+      const oursValue = cellAtRow(alignedRow.ours, columnIndex);
+      const theirsValue = cellAtRow(alignedRow.theirs, columnIndex);
       const oursChanged = oursValue !== baseValue;
       const theirsChanged = theirsValue !== baseValue;
       let kind = "same";
@@ -113,6 +114,10 @@ export function buildTableMerge(baseText = "", oursText = "", theirsText = "", o
         row: rowIndex,
         column: columnIndex,
         label: `${columnName(columnIndex)}${rowIndex + 1}`,
+        rowKey: alignedRow.key,
+        baseRow: alignedRow.baseRow,
+        oursRow: alignedRow.oursRow,
+        theirsRow: alignedRow.theirsRow,
         kind,
         base: baseValue,
         ours: oursValue,
@@ -124,7 +129,7 @@ export function buildTableMerge(baseText = "", oursText = "", theirsText = "", o
     cells.push(row);
   }
 
-  return { delimiter, rowCount, columnCount, cells, conflictCount, autoCount };
+  return { delimiter, rowCount: alignedRows.length, columnCount, cells, conflictCount, autoCount };
 }
 
 export function composeTableDraft(table, options = {}) {
@@ -269,8 +274,157 @@ function parseDelimitedLine(line, delimiter) {
   return cells;
 }
 
-function cellAt(table, row, column) {
-  return table[row]?.[column] ?? "";
+function cellAtRow(row, column) {
+  return row?.[column] ?? "";
+}
+
+function alignTableRows(base, ours, theirs, columnCount) {
+  const tables = [base, ours, theirs];
+  const keyColumn = detectKeyColumn(tables, columnCount);
+  if (keyColumn < 0) return alignTableRowsByIndex(base, ours, theirs);
+
+  const baseRows = keyRows(base, keyColumn);
+  const oursRows = keyRows(ours, keyColumn);
+  const theirsRows = keyRows(theirs, keyColumn);
+  const order = keyedRowOrder(baseRows.keys, oursRows.keys, theirsRows.keys);
+
+  return order.map((key) => {
+    const baseEntry = baseRows.map.get(key);
+    const oursEntry = oursRows.map.get(key);
+    const theirsEntry = theirsRows.map.get(key);
+    return {
+      key,
+      base: baseEntry?.row || [],
+      ours: oursEntry?.row || [],
+      theirs: theirsEntry?.row || [],
+      baseRow: baseEntry?.index ?? "",
+      oursRow: oursEntry?.index ?? "",
+      theirsRow: theirsEntry?.index ?? ""
+    };
+  });
+}
+
+function alignTableRowsByIndex(base, ours, theirs) {
+  const rowCount = Math.max(base.length, ours.length, theirs.length);
+  return Array.from({ length: rowCount }, (_, rowIndex) => ({
+    key: "",
+    base: base[rowIndex] || [],
+    ours: ours[rowIndex] || [],
+    theirs: theirs[rowIndex] || [],
+    baseRow: rowIndex,
+    oursRow: rowIndex,
+    theirsRow: rowIndex
+  }));
+}
+
+function detectKeyColumn(tables, columnCount) {
+  const headerColumn = detectHeaderKeyColumn(tables, columnCount);
+  if (headerColumn >= 0 && isUsableKeyColumn(tables, headerColumn)) return headerColumn;
+
+  let bestColumn = -1;
+  let bestScore = 0;
+  for (let column = 0; column < columnCount; column++) {
+    const analysis = analyzeKeyColumn(tables, column);
+    if (!analysis.usable) continue;
+    const score = analysis.overlap * 100 + analysis.filled * 10 - column;
+    if (score > bestScore) {
+      bestScore = score;
+      bestColumn = column;
+    }
+  }
+  return bestColumn;
+}
+
+function detectHeaderKeyColumn(tables, columnCount) {
+  const headerNames = new Set(["key", "id", "rowkey", "row_key", "rowid", "row_id"]);
+  for (let column = 0; column < columnCount; column++) {
+    if (tables.some((table) => headerNames.has(normalizeKey(table[0]?.[column])))) return column;
+  }
+  return -1;
+}
+
+function isUsableKeyColumn(tables, column) {
+  return analyzeKeyColumn(tables, column).usable;
+}
+
+function analyzeKeyColumn(tables, column) {
+  const sets = [];
+  let filled = 0;
+  for (const table of tables) {
+    const keys = new Set();
+    for (const row of table) {
+      const key = normalizeKey(row?.[column]);
+      if (!key) continue;
+      if (keys.has(key)) return { usable: false, overlap: 0, filled };
+      keys.add(key);
+    }
+    filled += keys.size;
+    sets.push(keys);
+  }
+
+  const allKeys = new Set(sets.flatMap((set) => [...set]));
+  let overlap = 0;
+  for (const key of allKeys) {
+    const appearances = sets.filter((set) => set.has(key)).length;
+    if (appearances > 1) overlap++;
+  }
+
+  return { usable: overlap > 0, overlap, filled };
+}
+
+function keyRows(table, keyColumn) {
+  const keys = [];
+  const map = new Map();
+  for (let index = 0; index < table.length; index++) {
+    const row = table[index];
+    const key = normalizeKey(row?.[keyColumn]) || `__row:${index}`;
+    if (!map.has(key)) keys.push(key);
+    map.set(key, { row, index });
+  }
+  return { keys, map };
+}
+
+function keyedRowOrder(baseKeys, oursKeys, theirsKeys) {
+  const baseKeySet = new Set(baseKeys);
+  const seen = new Set();
+  const order = [];
+  let oursCursor = 0;
+  let theirsCursor = 0;
+
+  function push(key) {
+    if (seen.has(key)) return;
+    seen.add(key);
+    order.push(key);
+  }
+
+  function appendInsertedBefore(keys, cursor, anchorKey) {
+    const anchorIndex = keys.indexOf(anchorKey, cursor);
+    if (anchorIndex < 0) return cursor;
+    for (let index = cursor; index < anchorIndex; index++) {
+      const key = keys[index];
+      if (!baseKeySet.has(key)) push(key);
+    }
+    return anchorIndex + 1;
+  }
+
+  for (const baseKey of baseKeys) {
+    oursCursor = appendInsertedBefore(oursKeys, oursCursor, baseKey);
+    theirsCursor = appendInsertedBefore(theirsKeys, theirsCursor, baseKey);
+    push(baseKey);
+  }
+
+  for (let index = oursCursor; index < oursKeys.length; index++) {
+    if (!baseKeySet.has(oursKeys[index])) push(oursKeys[index]);
+  }
+  for (let index = theirsCursor; index < theirsKeys.length; index++) {
+    if (!baseKeySet.has(theirsKeys[index])) push(theirsKeys[index]);
+  }
+
+  return order;
+}
+
+function normalizeKey(value) {
+  return String(value ?? "").trim();
 }
 
 function composeTableRowsWithBothRows(table) {

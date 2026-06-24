@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { WebSocket } from "ws";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,6 +37,25 @@ async function waitForHealth(baseUrl) {
     }
   }
   throw new Error("server did not become healthy");
+}
+
+async function readEventMessage(url) {
+  return await new Promise((resolve, reject) => {
+    const socket = new WebSocket(url);
+    const timeout = setTimeout(() => {
+      socket.close();
+      reject(new Error("websocket event did not arrive"));
+    }, 3000);
+    socket.on("message", (message) => {
+      clearTimeout(timeout);
+      socket.close();
+      resolve(JSON.parse(message.toString()));
+    });
+    socket.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+  });
 }
 
 test("server exposes health, config, and inspect action", async () => {
@@ -81,6 +101,11 @@ test("server exposes health, config, and inspect action", async () => {
     const health = await waitForHealth(baseUrl);
     assert.equal(health.ok, true);
     assert.equal(health.repoPath, repo);
+
+    const eventMessage = await readEventMessage(`ws://127.0.0.1:${port}/api/events`);
+    assert.equal(eventMessage.event, "state");
+    assert.equal(eventMessage.data.state.phase, "Idle");
+    assert.ok(Array.isArray(eventMessage.data.logs));
 
     const pageResponse = await fetch(`${baseUrl}/`);
     const page = await pageResponse.text();

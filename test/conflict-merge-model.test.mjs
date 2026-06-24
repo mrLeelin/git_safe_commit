@@ -70,6 +70,37 @@ test("buildTableMerge flags same-cell conflicts and auto merges different cells"
   assert.equal(composeTableDraft(table), "id,name,score,note\n1,Alicia,11,theirs");
 });
 
+test("buildTableMerge aligns keyed rows before comparing cells", () => {
+  const base = [
+    "index,key,zh,en",
+    ",net_error_describe_-15,dynamodb 数据库异常,DynamoDB database error",
+    ",language_title,语言:,Language:123"
+  ].join("\n");
+  const ours = [
+    "index,key,zh,en",
+    ",net_error_describe_-10,更新数据失败,Failed to update data",
+    ",net_error_describe_-15,dynamodb 数据库异常,DynamoDB database error",
+    ",language_title,语言:,Language:456"
+  ].join("\n");
+  const theirs = [
+    "index,key,zh,en",
+    ",net_error_describe_-15,dynamodb 数据库异常,DynamoDB database error",
+    ",language_title,语言:111111111111112312312,Language:456"
+  ].join("\n");
+
+  const table = buildTableMerge(base, ours, theirs, { delimiter: "," });
+  const keyedCells = table.cells.flatMap((row) => row).filter((cell) => cell.rowKey === "language_title");
+
+  assert.equal(
+    keyedCells.some((cell) => cell.ours === "net_error_describe_-15" || cell.theirs === "net_error_describe_-15"),
+    false
+  );
+  assert.equal(keyedCells.find((cell) => cell.column === 2).kind, "auto-theirs");
+  assert.equal(keyedCells.find((cell) => cell.column === 2).theirs, "语言:111111111111112312312");
+  assert.equal(keyedCells.find((cell) => cell.column === 3).kind, "same-change");
+  assert.equal(keyedCells.find((cell) => cell.column === 3).value, "Language:456");
+});
+
 test("composeTableDraft writes table BOTH as a new row by default", () => {
   const base = "id,name\n1,Alice\n";
   const ours = "id,name\n1,Alicia\n";
