@@ -111,7 +111,7 @@ const railCollapsed = ref(false);
 const commitResetKey = ref(0);
 const conflictCandidates = ref({});
 const operationNotice = ref(null);
-const pushSuccessActions = new Set(["push", "ai-push", "continue-rebase-and-push", "ai-sync-and-push"]);
+const pushSuccessActions = new Set(["push", "ai-push", "continue-rebase-and-push", "abort-rebase", "ai-sync-and-push"]);
 const repositoryChangingActions = new Set([
   "inspect",
   "create-recovery",
@@ -122,6 +122,7 @@ const repositoryChangingActions = new Set([
   "resolve-conflict",
   "commit",
   "continue-rebase-and-push",
+  "abort-rebase",
   "ai-commit",
   "ai-sync",
   "ai-push"
@@ -299,10 +300,14 @@ function showOperationNotice(action, result = {}) {
   const branch = result.summary?.branch || summary.value?.branch || "";
   const title = action === "continue-rebase-and-push"
     ? "变基已继续并推送成功"
+    : action === "abort-rebase"
+      ? "变基已复位"
     : action === "ai-sync-and-push"
       ? "AI 已同步并推送成功"
       : "推送成功";
-  const message = action === "ai-sync-and-push" && branch
+  const message = action === "abort-rebase"
+    ? "已执行 git rebase --abort，工作区回到 rebase 之前的状态。"
+    : action === "ai-sync-and-push" && branch
     ? `分支 ${branch} 已同步远端并推送。`
     : branch
       ? `分支 ${branch} 已经推送到远端。`
@@ -549,7 +554,8 @@ function labelAction(action) {
     "ai-sync": zh.aiSync,
     "ai-push": zh.aiPush,
     "ai-sync-and-push": "AI 同步后推送",
-    "continue-rebase-and-push": "继续变基并推送"
+    "continue-rebase-and-push": "继续变基并推送",
+    "abort-rebase": "复位 rebase"
   })[action] || action;
 }
 

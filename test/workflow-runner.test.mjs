@@ -502,6 +502,59 @@ test("workflow runner refuses continue-and-push outside an active rebase", async
   );
 });
 
+test("workflow runner aborts an active rebase back to the pre-rebase state", async () => {
+  const repo = await createRepo("gsc-rebase-abort-runner-");
+  const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-rebase-abort-remote-"));
+  const other = await mkdtemp(path.join(os.tmpdir(), "gsc-rebase-abort-other-"));
+  git(remote, ["init", "--bare", "-b", "main"]);
+  git(repo, ["remote", "add", "origin", remote]);
+  git(repo, ["push", "-u", "origin", "main"]);
+  git(other, ["clone", remote, "."]);
+  git(other, ["config", "user.email", "remote@example.test"]);
+  git(other, ["config", "user.name", "Remote Test"]);
+
+  await writeFile(path.join(repo, "tracked.txt"), "local\n", "utf8");
+  git(repo, ["commit", "-am", "local change"]);
+  const localHeadBeforeRebase = git(repo, ["rev-parse", "HEAD"]).trim();
+  await writeFile(path.join(other, "tracked.txt"), "remote\n", "utf8");
+  git(other, ["commit", "-am", "remote change"]);
+  git(other, ["push"]);
+  git(repo, ["fetch", "--prune"]);
+  assert.throws(() => git(repo, ["rebase", "origin/main"]));
+
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+  const result = await runner.run("abort-rebase", { confirmed: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.abortRebase.ok, true);
+  assert.equal(result.summary.rebaseInProgress, false);
+  assert.equal(result.summary.cleanWorktree, true);
+  assert.equal(git(repo, ["rev-parse", "HEAD"]).trim(), localHeadBeforeRebase);
+  assert.equal(normalizeNewlines(await readFile(path.join(repo, "tracked.txt"), "utf8")), "local\n");
+});
+
+test("workflow runner refuses rebase abort outside an active rebase", async () => {
+  const repo = await createRepo("gsc-no-rebase-abort-runner-");
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  await assert.rejects(
+    () => runner.run("abort-rebase", { confirmed: true }),
+    /no active rebase/
+  );
+});
+
 test("workflow runner accepts ai-commit payload and exposes commit tools", async () => {
   const repo = await createRepo();
   await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");

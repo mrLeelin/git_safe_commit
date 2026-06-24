@@ -25,6 +25,7 @@ test("validateGitArgs accepts allowlisted commands", () => {
     ["fetch", "--prune"],
     ["rebase", "@{u}"],
     ["rebase", "--continue"],
+    ["rebase", "--abort"],
     ["push"],
     ["add", "--", "file.txt"],
     ["commit", "-m", "Update file"],

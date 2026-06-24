@@ -73,7 +73,9 @@ export function buildTableMerge(baseText = "", oursText = "", theirsText = "", o
     ...[base, ours, theirs].flatMap((table) => table.map((row) => row.length)),
     0
   );
-  const alignedRows = alignTableRows(base, ours, theirs, columnCount);
+  const keyCandidates = detectKeyCandidates([base, ours, theirs], columnCount);
+  const alignment = alignTableRows(base, ours, theirs, columnCount, options, keyCandidates);
+  const alignedRows = alignment.rows;
   const cells = [];
   let conflictCount = 0;
   let autoCount = 0;
@@ -129,7 +131,17 @@ export function buildTableMerge(baseText = "", oursText = "", theirsText = "", o
     cells.push(row);
   }
 
-  return { delimiter, rowCount: alignedRows.length, columnCount, cells, conflictCount, autoCount };
+  return {
+    delimiter,
+    rowCount: alignedRows.length,
+    columnCount,
+    cells,
+    conflictCount,
+    autoCount,
+    rowAlignment: alignment.mode,
+    keyColumn: alignment.keyColumn,
+    keyCandidates
+  };
 }
 
 export function composeTableDraft(table, options = {}) {
@@ -278,17 +290,35 @@ function cellAtRow(row, column) {
   return row?.[column] ?? "";
 }
 
-function alignTableRows(base, ours, theirs, columnCount) {
+function alignTableRows(base, ours, theirs, columnCount, options = {}, keyCandidates = []) {
+  const requestedKeyColumn = Number.isInteger(options.keyColumn) ? options.keyColumn : -1;
+  if (options.alignment === "index" || options.inferKeys === false) {
+    return { mode: "index", keyColumn: -1, rows: alignTableRowsByIndex(base, ours, theirs) };
+  }
+
   const tables = [base, ours, theirs];
-  const keyColumn = detectKeyColumn(tables, columnCount);
-  if (keyColumn < 0) return alignTableRowsByIndex(base, ours, theirs);
+  const forced = options.alignment === "key" || options.inferKeys === true || requestedKeyColumn >= 0;
+  const keyColumn = requestedKeyColumn >= 0
+    ? requestedKeyColumn
+    : forced
+      ? detectKeyColumn(tables, columnCount)
+      : chooseAutoKeyColumn(tables, columnCount);
+  if (keyColumn < 0) {
+    return { mode: "index", keyColumn: -1, rows: alignTableRowsByIndex(base, ours, theirs) };
+  }
+  if (requestedKeyColumn >= 0 && !keyCandidates.some((candidate) => candidate.column === requestedKeyColumn)) {
+    return { mode: "index", keyColumn: -1, rows: alignTableRowsByIndex(base, ours, theirs) };
+  }
 
   const baseRows = keyRows(base, keyColumn);
   const oursRows = keyRows(ours, keyColumn);
   const theirsRows = keyRows(theirs, keyColumn);
   const order = keyedRowOrder(baseRows.keys, oursRows.keys, theirsRows.keys);
 
-  return order.map((key) => {
+  return {
+    mode: requestedKeyColumn >= 0 ? "manual-key" : forced ? "key" : "auto-key",
+    keyColumn,
+    rows: order.map((key) => {
     const baseEntry = baseRows.map.get(key);
     const oursEntry = oursRows.map.get(key);
     const theirsEntry = theirsRows.map.get(key);
@@ -301,7 +331,22 @@ function alignTableRows(base, ours, theirs, columnCount) {
       oursRow: oursEntry?.index ?? "",
       theirsRow: theirsEntry?.index ?? ""
     };
-  });
+    })
+  };
+}
+
+function detectKeyCandidates(tables, columnCount) {
+  return Array.from({ length: columnCount }, (_, column) => {
+    const analysis = analyzeKeyColumn(tables, column);
+    return {
+      column,
+      header: tables[0]?.[0]?.[column] || columnName(column),
+      usable: analysis.usable,
+      overlap: analysis.overlap,
+      filled: analysis.filled,
+      explicit: isExplicitKeyHeader(tables, column)
+    };
+  }).filter((candidate) => candidate.usable);
 }
 
 function alignTableRowsByIndex(base, ours, theirs) {
@@ -321,6 +366,19 @@ function detectKeyColumn(tables, columnCount) {
   const headerColumn = detectHeaderKeyColumn(tables, columnCount);
   if (headerColumn >= 0 && isUsableKeyColumn(tables, headerColumn)) return headerColumn;
 
+  return detectHeuristicKeyColumn(tables, columnCount);
+}
+
+function chooseAutoKeyColumn(tables, columnCount) {
+  const headerColumn = detectHeaderKeyColumn(tables, columnCount);
+  if (headerColumn >= 0 && isUsableKeyColumn(tables, headerColumn)) return headerColumn;
+
+  const heuristicColumn = detectHeuristicKeyColumn(tables, columnCount);
+  if (heuristicColumn < 0) return -1;
+  return tableShapeSuggestsRowIdentityChanged(tables, heuristicColumn) ? heuristicColumn : -1;
+}
+
+function detectHeuristicKeyColumn(tables, columnCount) {
   let bestColumn = -1;
   let bestScore = 0;
   for (let column = 0; column < columnCount; column++) {
@@ -335,12 +393,26 @@ function detectKeyColumn(tables, columnCount) {
   return bestColumn;
 }
 
+function tableShapeSuggestsRowIdentityChanged(tables, keyColumn) {
+  const baseKeys = keySequence(tables[0], keyColumn);
+  return tables.slice(1).some((table) => {
+    const keys = keySequence(table, keyColumn);
+    if (keys.length !== baseKeys.length) return true;
+    if (sameSequence(keys, baseKeys)) return false;
+    return sameKeySet(keys, baseKeys);
+  });
+}
+
 function detectHeaderKeyColumn(tables, columnCount) {
-  const headerNames = new Set(["key", "id", "rowkey", "row_key", "rowid", "row_id"]);
   for (let column = 0; column < columnCount; column++) {
-    if (tables.some((table) => headerNames.has(normalizeKey(table[0]?.[column])))) return column;
+    if (isExplicitKeyHeader(tables, column)) return column;
   }
   return -1;
+}
+
+function isExplicitKeyHeader(tables, column) {
+  const headerNames = new Set(["key", "id", "rowkey", "row_key", "rowid", "row_id"]);
+  return tables.some((table) => headerNames.has(normalizeKey(table[0]?.[column]).toLowerCase()));
 }
 
 function isUsableKeyColumn(tables, column) {
@@ -425,6 +497,20 @@ function keyedRowOrder(baseKeys, oursKeys, theirsKeys) {
 
 function normalizeKey(value) {
   return String(value ?? "").trim();
+}
+
+function keySequence(table, column) {
+  return table.map((row) => normalizeKey(row?.[column])).filter(Boolean);
+}
+
+function sameSequence(left, right) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function sameKeySet(left, right) {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((value) => rightSet.has(value));
 }
 
 function composeTableRowsWithBothRows(table) {

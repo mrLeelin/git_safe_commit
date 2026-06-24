@@ -105,6 +105,96 @@ async function createSparseSpreadsheetConflictRepo() {
   return repo;
 }
 
+async function createMultiSheetSpreadsheetConflictRepo() {
+  const repo = await mkdtemp(path.join(os.tmpdir(), "gsc-multisheet-xlsx-conflict-workbench-"));
+  git(repo, ["init", "-b", "main"]);
+  git(repo, ["config", "user.email", "tool@example.test"]);
+  git(repo, ["config", "user.name", "Tool Test"]);
+  await writeWorkbookSheets(path.join(repo, "data.xlsx"), {
+    Sheet1: [
+      ["id", "name"],
+      [1, "same"]
+    ],
+    Sheet2: [
+      ["id", "title"],
+      [1, "base"]
+    ]
+  });
+  git(repo, ["add", "."]);
+  git(repo, ["commit", "-m", "initial"]);
+  git(repo, ["switch", "-c", "feature"]);
+  await writeWorkbookSheets(path.join(repo, "data.xlsx"), {
+    Sheet1: [
+      ["id", "name"],
+      [1, "same"]
+    ],
+    Sheet2: [
+      ["id", "title"],
+      [1, "theirs"]
+    ]
+  });
+  git(repo, ["commit", "-am", "feature edit"]);
+  git(repo, ["switch", "main"]);
+  await writeWorkbookSheets(path.join(repo, "data.xlsx"), {
+    Sheet1: [
+      ["id", "name"],
+      [1, "same"]
+    ],
+    Sheet2: [
+      ["id", "title"],
+      [1, "ours"]
+    ]
+  });
+  git(repo, ["commit", "-am", "main edit"]);
+  assert.throws(() => git(repo, ["merge", "feature"]));
+  return repo;
+}
+
+async function createTwoConflictSheetSpreadsheetRepo() {
+  const repo = await mkdtemp(path.join(os.tmpdir(), "gsc-two-sheet-xlsx-conflict-workbench-"));
+  git(repo, ["init", "-b", "main"]);
+  git(repo, ["config", "user.email", "tool@example.test"]);
+  git(repo, ["config", "user.name", "Tool Test"]);
+  await writeWorkbookSheets(path.join(repo, "data.xlsx"), {
+    Sheet1: [
+      ["id", "name"],
+      [1, "base-a"]
+    ],
+    Sheet2: [
+      ["id", "title"],
+      [1, "base-b"]
+    ]
+  });
+  git(repo, ["add", "."]);
+  git(repo, ["commit", "-m", "initial"]);
+  git(repo, ["switch", "-c", "feature"]);
+  await writeWorkbookSheets(path.join(repo, "data.xlsx"), {
+    Sheet1: [
+      ["id", "name"],
+      [1, "theirs-a"]
+    ],
+    Sheet2: [
+      ["id", "title"],
+      [1, "theirs-b"]
+    ]
+  });
+  git(repo, ["commit", "-am", "feature edit"]);
+  git(repo, ["switch", "main"]);
+  await writeWorkbookSheets(path.join(repo, "data.xlsx"), {
+    Sheet1: [
+      ["id", "name"],
+      [1, "ours-a"]
+    ],
+    Sheet2: [
+      ["id", "title"],
+      [1, "ours-b"]
+    ]
+  });
+  git(repo, ["commit", "-am", "main edit"]);
+  assert.throws(() => git(repo, ["merge", "feature"]));
+  return repo;
+}
+
 test("text conflict workbench loads stages and writes a candidate without staging", async () => {
   const repo = await createConflictRepo();
 
@@ -232,29 +322,79 @@ test("table conflict workbench loads XLSX stages and writes an XLSX candidate wi
   assert.match(git(repo, ["status", "--short"]), /^UU data\.xlsx/m);
 });
 
-test("table conflict workbench preserves XLSX row numbers when blank rows exist", async () => {
+test("table conflict workbench compacts pure empty XLSX rows", async () => {
   const repo = await createSparseSpreadsheetConflictRepo();
 
   const loaded = await loadTableConflict({ repoPath: repo, filePath: "data.xlsx" });
-  const conflict = loaded.tableConflict.merge.cells[3][1];
+  const conflict = loaded.tableConflict.merge.cells[2][1];
   conflict.choice = "theirs";
   const candidate = await writeTableCandidate({
     repoPath: repo,
     filePath: "data.xlsx",
-    content: "id,name\n0,\"line\nbreak\"\n,\n1,Ally\n",
+    content: "id,name\n0,\"line\nbreak\"\n1,Ally\n",
     source: "table",
-    cellChoices: [{ row: 3, column: 1, label: "B4", choice: "theirs" }]
+    cellChoices: [{ row: 2, column: 1, label: "B3", choice: "theirs" }]
   });
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(await readFile(path.join(repo, candidate.tableCandidate.candidate)));
   const sheet = workbook.worksheets[0];
 
-  assert.equal(conflict.label, "B4");
+  assert.equal(conflict.label, "B3");
   assert.equal(conflict.ours, "Alicia");
   assert.equal(conflict.theirs, "Ally");
   assert.equal(sheet.getCell("B2").value, "line\nbreak");
-  assert.equal(sheet.getCell("B3").value, null);
-  assert.equal(sheet.getCell("B4").value, "Ally");
+  assert.equal(sheet.getCell("B3").value, "Ally");
+  assert.equal(sheet.rowCount, 3);
+});
+
+test("table conflict workbench exposes and writes conflicts from a second XLSX sheet", async () => {
+  const repo = await createMultiSheetSpreadsheetConflictRepo();
+
+  const loaded = await loadTableConflict({ repoPath: repo, filePath: "data.xlsx" });
+  const secondSheet = loaded.tableConflict.sheets.find((sheet) => sheet.name === "Sheet2");
+  const candidate = await writeTableCandidate({
+    repoPath: repo,
+    filePath: "data.xlsx",
+    sheetName: "Sheet2",
+    content: "id,title\n1,theirs\n",
+    source: "table",
+    cellChoices: [{ sheetName: "Sheet2", row: 1, column: 1, label: "B2", choice: "theirs" }]
+  });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await readFile(path.join(repo, candidate.tableCandidate.candidate)));
+
+  assert.equal(loaded.tableConflict.activeSheetName, "Sheet2");
+  assert.equal(secondSheet.merge.conflictCount, 1);
+  assert.equal(secondSheet.merge.cells[1][1].label, "B2");
+  assert.equal(secondSheet.merge.cells[1][1].ours, "ours");
+  assert.equal(secondSheet.merge.cells[1][1].theirs, "theirs");
+  assert.equal(workbook.getWorksheet("Sheet1").getCell("B2").value, "same");
+  assert.equal(workbook.getWorksheet("Sheet2").getCell("B2").value, "theirs");
+});
+
+test("table conflict workbench writes every XLSX sheet merge into one candidate", async () => {
+  const repo = await createTwoConflictSheetSpreadsheetRepo();
+
+  const loaded = await loadTableConflict({ repoPath: repo, filePath: "data.xlsx" });
+  const candidate = await writeTableCandidate({
+    repoPath: repo,
+    filePath: "data.xlsx",
+    sheets: [
+      { name: "Sheet1", content: "id,name\n1,theirs-a\n" },
+      { name: "Sheet2", content: "id,title\n1,theirs-b\n" }
+    ],
+    source: "table",
+    cellChoices: [
+      { sheetName: "Sheet1", row: 1, column: 1, label: "B2", choice: "theirs" },
+      { sheetName: "Sheet2", row: 1, column: 1, label: "B2", choice: "theirs" }
+    ]
+  });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await readFile(path.join(repo, candidate.tableCandidate.candidate)));
+
+  assert.equal(loaded.tableConflict.sheets.length, 2);
+  assert.equal(workbook.getWorksheet("Sheet1").getCell("B2").value, "theirs-a");
+  assert.equal(workbook.getWorksheet("Sheet2").getCell("B2").value, "theirs-b");
 });
 
 test("binary conflict workbench exports ours and theirs without resolving", async () => {
@@ -287,6 +427,15 @@ async function writeWorkbook(filePath, rows) {
     color: { argb: "FFFFFFFF" }
   };
   sheet.getCell("B2").alignment = { horizontal: "center" };
+  await workbook.xlsx.writeFile(filePath);
+}
+
+async function writeWorkbookSheets(filePath, sheets) {
+  const workbook = new ExcelJS.Workbook();
+  for (const [name, rows] of Object.entries(sheets)) {
+    const sheet = workbook.addWorksheet(name);
+    for (const row of rows) sheet.addRow(row);
+  }
   await workbook.xlsx.writeFile(filePath);
 }
 

@@ -1132,6 +1132,75 @@ textarea {
   border-color: #60a5fa;
   background: #10233f;
 }
+.table-alignment-panel {
+  margin-top: 12px;
+  border: 1px solid #334357;
+  border-radius: 10px;
+  background: #172234;
+  padding: 12px;
+}
+.table-alignment-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.table-key-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 800;
+}
+.table-key-select.disabled {
+  opacity: .55;
+}
+.table-key-select select {
+  min-height: 30px;
+  max-width: min(420px, 62vw);
+  border: 1px solid #43556e;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 4px 8px;
+}
+.table-alignment-hint {
+  margin: 8px 0 0;
+  color: #93a4b7;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.table-sheet-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+.table-sheet-tab {
+  border: 1px solid rgba(148, 163, 184, .25);
+  background: rgba(15, 23, 42, .48);
+  color: inherit;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.table-sheet-tab span {
+  color: #93a4b7;
+  font-size: 12px;
+}
+.table-sheet-tab.active {
+  border-color: rgba(59, 130, 246, .75);
+  background: rgba(37, 99, 235, .18);
+}
+.table-sheet-tab.conflict strong {
+  color: #fca5a5;
+}
 .table-decision-grid {
   display: grid;
   grid-template-columns: minmax(420px, 1fr) minmax(420px, .9fr);
@@ -2014,6 +2083,7 @@ textarea {
 .theme-light .table-summary,
 .theme-light .table-hero-main,
 .theme-light .table-hero-note,
+.theme-light .table-alignment-panel,
 .theme-light .table-conflict-list,
 .theme-light .table-conflict-detail,
 .theme-light .table-side-pane,
@@ -2039,9 +2109,18 @@ textarea {
 .theme-light .table-section-head span,
 .theme-light .table-detail-note,
 .theme-light .table-empty-decision,
+.theme-light .table-alignment-hint,
 .theme-light .excel-metric span,
 .theme-light .table-value-card span {
   color: #64748b;
+}
+.theme-light .table-key-select {
+  color: #334155;
+}
+.theme-light .table-key-select select {
+  border-color: #dbe3ed;
+  background: #ffffff;
+  color: #0f172a;
 }
 .theme-light .excel-metric {
   border-color: #dbe3ed;

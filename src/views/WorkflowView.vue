@@ -46,10 +46,14 @@ const textDraftSource = ref("current");
 const textLineRows = ref([]);
 const tableConflict = ref(null);
 const tableMerge = ref(null);
+const tableSheets = ref([]);
+const activeTableSheetName = ref("");
 const tableCandidate = ref("");
 const selectedTableCellId = ref("");
 const tableRowBulkChoice = ref("ours");
 const tableBothStrategy = ref("rows");
+const tableAlignmentMode = ref("auto");
+const tableKeyColumn = ref("-1");
 const binaryConflict = ref(null);
 const binaryChoice = ref("ours");
 const candidatePath = ref("");
@@ -66,6 +70,7 @@ const selectedFileCount = computed(() => selectedPaths.value.length);
 const selectedFilesLabel = computed(() => `${selectedFileCount.value} / ${props.selectableFiles.length}`);
 const changedCount = computed(() => props.files.length);
 const rebaseInProgress = computed(() => Boolean(props.summary?.rebaseInProgress || props.status?.rebaseInProgress));
+const canAbortRebase = computed(() => rebaseInProgress.value && !props.busy);
 const canCommit = computed(() => !commitBlockReason.value && !props.busy);
 const canPush = computed(() => !pushBlockReason.value && !props.busy);
 const pushFollowupAction = computed(() => props.operationNotice?.action === "ai-sync-and-push" ? "ai-sync-and-push" : "");
@@ -123,6 +128,9 @@ const tableConflictItems = computed(() => {
 const selectedTableConflict = computed(() => {
   return tableConflictItems.value.find((cell) => cell.id === selectedTableCellId.value) || tableConflictItems.value[0] || null;
 });
+const activeTableSheet = computed(() => {
+  return tableSheets.value.find((sheet) => sheet.name === activeTableSheetName.value) || tableSheets.value[0] || null;
+});
 const tableRowsWithDiff = computed(() => {
   return (tableMerge.value?.cells || []).filter((row) => row.some(tableCellHasDiff));
 });
@@ -142,6 +150,15 @@ const tablePreviewRows = computed(() => composeTableRows(tableMerge.value, { bot
 const tablePreviewColumnIndexes = computed(() => {
   const width = Math.max(...tablePreviewRows.value.map((row) => row.length), 0);
   return Array.from({ length: width }, (_, index) => index);
+});
+const tableKeyColumnOptions = computed(() => tableMerge.value?.keyCandidates || []);
+const tableAlignmentLabel = computed(() => {
+  if (tableAlignmentMode.value === "index") return "按行列";
+  if (tableAlignmentMode.value === "key") return tableKeyColumnName(Number(tableKeyColumn.value));
+  if (tableMerge.value?.rowAlignment === "auto-key") return `自动: ${tableKeyColumnName(tableMerge.value.keyColumn)}`;
+  if (tableMerge.value?.rowAlignment === "key") return `Key: ${tableKeyColumnName(tableMerge.value.keyColumn)}`;
+  if (tableMerge.value?.rowAlignment === "manual-key") return `主键: ${tableKeyColumnName(tableMerge.value.keyColumn)}`;
+  return "自动: 按行列";
 });
 
 const commitBlockReason = computed(() => {
@@ -276,6 +293,10 @@ function runRemoteAction() {
   confirmAction.value = remotePrimaryAction.value;
 }
 
+function confirmAbortRebase() {
+  confirmAction.value = "abort-rebase";
+}
+
 function confirmExecute() {
   const action = confirmAction.value;
   confirmAction.value = null;
@@ -285,6 +306,8 @@ function confirmExecute() {
     emit("action", "ai-sync-and-push", { confirmed: true });
   } else if (action === "continue-rebase-and-push") {
     emit("action", "continue-rebase-and-push", { confirmed: true });
+  } else if (action === "abort-rebase") {
+    emit("action", "abort-rebase", { confirmed: true });
   } else if (action === "sync") {
     emit("action", "ai-sync");
   }
@@ -302,10 +325,14 @@ function closeWorkbench() {
   textLineRows.value = [];
   tableConflict.value = null;
   tableMerge.value = null;
+  tableSheets.value = [];
+  activeTableSheetName.value = "";
   tableCandidate.value = "";
   selectedTableCellId.value = "";
   tableRowBulkChoice.value = "ours";
   tableBothStrategy.value = "rows";
+  tableAlignmentMode.value = "auto";
+  tableKeyColumn.value = "-1";
   binaryConflict.value = null;
   binaryChoice.value = "ours";
   candidatePath.value = "";
@@ -372,10 +399,14 @@ async function openTextWorkbench(path) {
   activeConflictPath.value = path;
   tableConflict.value = null;
   tableMerge.value = null;
+  tableSheets.value = [];
+  activeTableSheetName.value = "";
   tableCandidate.value = "";
   selectedTableCellId.value = "";
   tableRowBulkChoice.value = "ours";
   tableBothStrategy.value = "rows";
+  tableAlignmentMode.value = "auto";
+  tableKeyColumn.value = "-1";
   binaryConflict.value = null;
   binaryChoice.value = "ours";
   candidatePath.value = "";
@@ -405,6 +436,8 @@ async function openTableWorkbench(path) {
   selectedTableCellId.value = "";
   tableRowBulkChoice.value = "ours";
   tableBothStrategy.value = "rows";
+  tableAlignmentMode.value = "auto";
+  tableKeyColumn.value = "-1";
   binaryConflict.value = null;
   binaryChoice.value = "ours";
   candidatePath.value = "";
@@ -417,14 +450,10 @@ async function openTableWorkbench(path) {
     return;
   }
   tableConflict.value = result.tableConflict;
-  tableMerge.value = result.tableConflict.merge || buildTableMerge(
-    result.tableConflict.base?.content || "",
-    result.tableConflict.ours?.content || "",
-    result.tableConflict.theirs?.content || ""
-  );
-  selectedTableCellId.value = tableConflictItems.value[0]?.id || "";
-  refreshTableCandidate();
-  restoreCandidateResult(path, `表格冲突已加载。同格冲突 ${tableMerge.value.conflictCount} 个；不同格自动合并 ${tableMerge.value.autoCount} 个。候选文件只会写入备份目录。`);
+  tableSheets.value = result.tableConflict.sheets || [];
+  const initialSheetName = result.tableConflict.activeSheetName || tableSheets.value[0]?.name || "";
+  setActiveTableSheet(initialSheetName || "");
+  restoreCandidateResult(path, tableSheetLoadedMessage());
 }
 
 async function openBinaryWorkbench(path) {
@@ -435,10 +464,14 @@ async function openBinaryWorkbench(path) {
   textLineRows.value = [];
   tableConflict.value = null;
   tableMerge.value = null;
+  tableSheets.value = [];
+  activeTableSheetName.value = "";
   tableCandidate.value = "";
   selectedTableCellId.value = "";
   tableRowBulkChoice.value = "ours";
   tableBothStrategy.value = "rows";
+  tableAlignmentMode.value = "auto";
+  tableKeyColumn.value = "-1";
   binaryConflict.value = null;
   binaryChoice.value = "ours";
   candidatePath.value = "";
@@ -540,6 +573,84 @@ function selectTableConflict(cell) {
   scrollTablePanesToCell(cell);
 }
 
+function setActiveTableSheet(sheetName) {
+  const sheet = tableSheets.value.find((item) => item.name === sheetName) || tableSheets.value[0] || null;
+  activeTableSheetName.value = sheet?.name || "";
+  tableMerge.value = sheet?.merge || tableConflict.value?.merge || buildTableMerge(
+    tableConflict.value?.base?.content || "",
+    tableConflict.value?.ours?.content || "",
+    tableConflict.value?.theirs?.content || ""
+  );
+  restoreTableAlignmentControls(sheet);
+  selectedTableCellId.value = tableConflictItems.value[0]?.id || "";
+  refreshTableCandidate();
+  workbenchMessage.value = tableSheetLoadedMessage();
+}
+
+function restoreTableAlignmentControls(sheet) {
+  tableAlignmentMode.value = sheet?.alignmentMode || tableConflict.value?.alignmentMode || "auto";
+  const storedColumn = Number.isInteger(sheet?.keyColumn)
+    ? sheet.keyColumn
+    : Number.isInteger(tableConflict.value?.keyColumn)
+      ? tableConflict.value.keyColumn
+      : Number.isInteger(tableMerge.value?.keyColumn) && tableMerge.value.keyColumn >= 0
+        ? tableMerge.value.keyColumn
+        : tableMerge.value?.keyCandidates?.[0]?.column ?? -1;
+  tableKeyColumn.value = String(storedColumn);
+}
+
+function setTableAlignmentMode(mode) {
+  tableAlignmentMode.value = ["auto", "index", "key"].includes(mode) ? mode : "auto";
+  if (tableAlignmentMode.value === "key" && Number(tableKeyColumn.value) < 0) {
+    tableKeyColumn.value = String(tableKeyColumnOptions.value[0]?.column ?? 0);
+  }
+  rebuildActiveTableMerge();
+}
+
+function setTableKeyColumn(column) {
+  tableKeyColumn.value = String(Number(column));
+  tableAlignmentMode.value = "key";
+  rebuildActiveTableMerge();
+}
+
+function rebuildActiveTableMerge() {
+  const sheet = activeTableSheet.value;
+  const source = sheet || tableConflict.value;
+  if (!source) return;
+  const options = { delimiter: tableMerge.value?.delimiter || "," };
+  if (tableAlignmentMode.value === "index") {
+    options.alignment = "index";
+  } else if (tableAlignmentMode.value === "key") {
+    options.alignment = "key";
+    options.keyColumn = Number(tableKeyColumn.value);
+  }
+  const merge = buildTableMerge(
+    source.base?.content || "",
+    source.ours?.content || "",
+    source.theirs?.content || "",
+    options
+  );
+  if (sheet) {
+    sheet.merge = merge;
+    sheet.alignmentMode = tableAlignmentMode.value;
+    sheet.keyColumn = Number(tableKeyColumn.value);
+    tableSheets.value = [...tableSheets.value];
+  } else if (tableConflict.value) {
+    tableConflict.value.merge = merge;
+    tableConflict.value.alignmentMode = tableAlignmentMode.value;
+    tableConflict.value.keyColumn = Number(tableKeyColumn.value);
+  }
+  tableMerge.value = merge;
+  selectedTableCellId.value = tableConflictItems.value[0]?.id || "";
+  refreshTableCandidate();
+  workbenchMessage.value = tableSheetLoadedMessage();
+}
+
+function tableSheetLoadedMessage() {
+  const sheetLabel = activeTableSheetName.value ? `Sheet ${activeTableSheetName.value}: ` : "";
+  return `${sheetLabel}表格冲突已加载。对齐方式 ${tableAlignmentLabel.value}；同格冲突 ${tableMerge.value?.conflictCount || 0} 个；不同格自动合并 ${tableMerge.value?.autoCount || 0} 个。候选文件只会写入备份目录。`;
+}
+
 function scrollTablePanesToCell(cell) {
   if (!cell) return;
   nextTick(() => {
@@ -611,6 +722,21 @@ function refreshTableCandidate() {
   tableCandidate.value = composeTableDraft(tableMerge.value, { bothStrategy: tableBothStrategy.value });
 }
 
+function tableSheetDrafts() {
+  if (!tableSheets.value.length) return [];
+  return tableSheets.value.map((sheet) => ({
+    name: sheet.name,
+    content: `${composeTableDraft(sheet.merge, { bothStrategy: tableBothStrategy.value })}\n`
+  }));
+}
+
+function tableSheetChoiceSummary() {
+  if (!tableSheets.value.length) return tableChoiceSummary(tableMerge.value);
+  return tableSheets.value.flatMap((sheet) => {
+    return tableChoiceSummary(sheet.merge).map((choice) => ({ ...choice, sheetName: sheet.name }));
+  });
+}
+
 function tableCellHasDiff(cell) {
   return Boolean(cell && !["same", "same-change"].includes(cell.kind));
 }
@@ -647,6 +773,13 @@ function tableColumnLabel(index) {
   return label || String(index + 1);
 }
 
+function tableKeyColumnName(column) {
+  if (!Number.isInteger(column) || column < 0) return "未选择";
+  const candidate = tableKeyColumnOptions.value.find((item) => item.column === column);
+  const header = candidate?.header ? ` ${candidate.header}` : "";
+  return `${tableColumnLabel(column)}${header}`;
+}
+
 async function saveTableCandidate() {
   if (!tableConflict.value || !tableMerge.value) return;
   const candidateContent = composeTableDraft(tableMerge.value, { bothStrategy: tableBothStrategy.value });
@@ -654,9 +787,11 @@ async function saveTableCandidate() {
   const result = await new Promise((resolve) => {
     emit("write-table-candidate", {
       path: tableConflict.value.path,
+      sheetName: activeTableSheetName.value,
+      sheets: tableSheetDrafts(),
       content: `${candidateContent}\n`,
       source: "table",
-      cellChoices: tableChoiceSummary(tableMerge.value)
+      cellChoices: tableSheetChoiceSummary()
     }, resolve);
   });
   if (result.ok) {
@@ -841,6 +976,8 @@ async function exportBinary(path) {
   textCandidate.value = "";
   tableConflict.value = null;
   tableMerge.value = null;
+  tableSheets.value = [];
+  activeTableSheetName.value = "";
   tableCandidate.value = "";
   binaryConflict.value = null;
   binaryChoice.value = "ours";
@@ -977,6 +1114,12 @@ async function ensureCommitMessage({ force = false } = {}) {
       </div>
       <div class="action-stack">
         <button class="btn danger" type="button" :disabled="!canRunRemoteAction" @click="runRemoteAction">{{ pushActionLabel }}</button>
+        <button
+          v-if="canAbortRebase"
+          class="btn secondary rebase-reset-action"
+          type="button"
+          @click="confirmAbortRebase"
+        >复位到 rebase 前</button>
         <span class="disabled-reason">{{ remoteActionBlockReason || pushReadyText }}</span>
       </div>
 
@@ -1170,8 +1313,44 @@ async function ensureCommitMessage({ force = false } = {}) {
           </div>
           <div class="table-hero-note">
             <strong>{{ tableConflict.path }}</strong>
+            <span v-if="activeTableSheetName">当前 Sheet: {{ activeTableSheetName }}</span>
             <span>候选文件不会覆盖原冲突文件，不执行 git add。</span>
           </div>
+        </div>
+
+        <div class="table-alignment-panel">
+          <div class="table-section-head">
+            <strong>行身份</strong>
+            <span>当前: {{ tableAlignmentLabel }}</span>
+          </div>
+          <div class="table-alignment-controls" aria-label="表格行身份对齐方式">
+            <button class="mini-btn" :class="{ active: tableAlignmentMode === 'auto' }" type="button" @click="setTableAlignmentMode('auto')">自动判断</button>
+            <button class="mini-btn" :class="{ active: tableAlignmentMode === 'index' }" type="button" @click="setTableAlignmentMode('index')">按行列位置</button>
+            <button class="mini-btn" :class="{ active: tableAlignmentMode === 'key' }" type="button" :disabled="!tableKeyColumnOptions.length" @click="setTableAlignmentMode('key')">按主键列</button>
+            <label class="table-key-select" :class="{ disabled: tableAlignmentMode !== 'key' || !tableKeyColumnOptions.length }">
+              <span>主键列</span>
+              <select :value="tableKeyColumn" :disabled="tableAlignmentMode !== 'key' || !tableKeyColumnOptions.length" @change="setTableKeyColumn($event.target.value)">
+                <option v-for="candidate in tableKeyColumnOptions" :key="candidate.column" :value="String(candidate.column)">
+                  {{ tableColumnLabel(candidate.column) }} · {{ candidate.header || '未命名列' }} · overlap {{ candidate.overlap }}
+                </option>
+              </select>
+            </label>
+          </div>
+          <p class="table-alignment-hint">推断拿不准时，先用“按行列位置”；如果两边有新增/删除/重排行，再切到“按主键列”。切换只影响当前 Sheet 的候选预览。</p>
+        </div>
+
+        <div v-if="tableSheets.length > 1" class="table-sheet-tabs" aria-label="XLSX Sheet 切换">
+          <button
+            v-for="sheet in tableSheets"
+            :key="sheet.name"
+            class="table-sheet-tab"
+            :class="{ active: activeTableSheetName === sheet.name, conflict: sheet.merge?.conflictCount }"
+            type="button"
+            @click="setActiveTableSheet(sheet.name)"
+          >
+            <strong>{{ sheet.name }}</strong>
+            <span>{{ sheet.merge?.conflictCount || 0 }} 冲突 / {{ sheet.merge?.autoCount || 0 }} 自动</span>
+          </button>
         </div>
 
         <div class="table-decision-grid" :class="{ 'no-conflicts': !tableConflictItems.length }">
@@ -1410,14 +1589,15 @@ async function ensureCommitMessage({ force = false } = {}) {
   <Teleport to="body">
     <div v-if="confirmAction" class="confirm-overlay" @click.self="cancelConfirm">
       <div class="confirm-dialog">
-        <h3>{{ confirmAction === 'push' ? '确认推送' : confirmAction === 'ai-sync-and-push' ? '确认 AI 同步后推送' : confirmAction === 'continue-rebase-and-push' ? '确认继续变基并推送' : '确认同步' }}</h3>
+        <h3>{{ confirmAction === 'push' ? '确认推送' : confirmAction === 'ai-sync-and-push' ? '确认 AI 同步后推送' : confirmAction === 'continue-rebase-and-push' ? '确认继续变基并推送' : confirmAction === 'abort-rebase' ? '确认复位 rebase' : '确认同步' }}</h3>
         <p v-if="confirmAction === 'push'">即将推送到远端，请确认当前分支的提交已经完成。</p>
         <p v-else-if="confirmAction === 'ai-sync-and-push'">AI 将先同步远端，自动 rebase 成功后继续推送；如果出现冲突会停在冲突工作台，不会 force push。</p>
         <p v-else-if="confirmAction === 'continue-rebase-and-push'">当前处于 rebase 流程。将执行 git rebase --continue，成功后直接推送到远端，不会再创建一遍普通提交。</p>
+        <p v-else-if="confirmAction === 'abort-rebase'">当前处于 rebase 流程。将执行 git rebase --abort，回退到 rebase 开始之前；不会执行 reset --hard。</p>
         <p v-else>即将获取远端最新状态并执行 rebase，本地提交会被变基。</p>
         <div class="confirm-actions">
           <button class="btn secondary" type="button" @click="cancelConfirm">取消</button>
-          <button class="btn" :class="{ danger: confirmAction === 'push' || confirmAction === 'ai-sync-and-push' }" type="button" @click="confirmExecute">确认执行</button>
+          <button class="btn" :class="{ danger: confirmAction === 'push' || confirmAction === 'ai-sync-and-push' || confirmAction === 'abort-rebase' }" type="button" @click="confirmExecute">确认执行</button>
         </div>
       </div>
     </div>

@@ -101,6 +101,65 @@ test("buildTableMerge aligns keyed rows before comparing cells", () => {
   assert.equal(keyedCells.find((cell) => cell.column === 3).value, "Language:456");
 });
 
+test("buildTableMerge can merge same-row edits when the first column is editable data", () => {
+  const base = "##var#column,##group,##type,##,value\nguild_open_level,,int,引导开启等级,1\n";
+  const ours = "##var#column,##group,##type,##,value\nguild_open_level_123,,int,引导开启等级,1\n";
+  const theirs = "##var#column,##group,##type,##,value\nguild_open_level,,int123323,引导开启等级,1\n";
+
+  const table = buildTableMerge(base, ours, theirs);
+
+  assert.equal(table.conflictCount, 0);
+  assert.equal(table.autoCount, 2);
+  assert.equal(table.rowAlignment, "index");
+  assert.equal(table.cells[1][0].kind, "auto-ours");
+  assert.equal(table.cells[1][2].kind, "auto-theirs");
+  assert.equal(composeTableDraft(table), "##var#column,##group,##type,##,value\nguild_open_level_123,,int123323,引导开启等级,1");
+});
+
+test("buildTableMerge uses heuristic row keys when inserted rows make indexes unreliable", () => {
+  const base = [
+    "var,type,value",
+    "alpha,int,1",
+    "beta,string,b"
+  ].join("\n");
+  const ours = [
+    "var,type,value",
+    "new_flag,bool,true",
+    "alpha,int,1",
+    "beta,string,b-ours"
+  ].join("\n");
+  const theirs = [
+    "var,type,value",
+    "alpha,int,2",
+    "beta,string,b"
+  ].join("\n");
+
+  const table = buildTableMerge(base, ours, theirs);
+  const betaCells = table.cells.flatMap((row) => row).filter((cell) => cell.rowKey === "beta");
+  const alphaCells = table.cells.flatMap((row) => row).filter((cell) => cell.rowKey === "alpha");
+
+  assert.equal(table.rowAlignment, "auto-key");
+  assert.equal(betaCells.find((cell) => cell.column === 2).kind, "auto-ours");
+  assert.equal(alphaCells.find((cell) => cell.column === 2).kind, "auto-theirs");
+  assert.equal(composeTableDraft(table), "var,type,value\nnew_flag,bool,true\nalpha,int,2\nbeta,string,b-ours");
+});
+
+test("buildTableMerge lets callers force a key column when auto alignment is too conservative", () => {
+  const base = "var,type,value\nalpha,int,1\nbeta,string,b";
+  const ours = "var,type,value\nbeta,string,b-ours\nalpha,int,1";
+  const theirs = "var,type,value\nalpha,int,2\nbeta,string,b";
+
+  const byIndex = buildTableMerge(base, ours, theirs, { alignment: "index" });
+  const byKey = buildTableMerge(base, ours, theirs, { alignment: "key", keyColumn: 0 });
+  const betaCells = byKey.cells.flatMap((row) => row).filter((cell) => cell.rowKey === "beta");
+
+  assert.equal(byIndex.rowAlignment, "index");
+  assert.equal(byKey.rowAlignment, "manual-key");
+  assert.equal(byKey.keyColumn, 0);
+  assert.equal(byKey.keyCandidates.some((candidate) => candidate.column === 0), true);
+  assert.equal(betaCells.find((cell) => cell.column === 2).kind, "auto-ours");
+});
+
 test("composeTableDraft writes table BOTH as a new row by default", () => {
   const base = "id,name\n1,Alice\n";
   const ours = "id,name\n1,Alicia\n";

@@ -179,6 +179,11 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.doesNotMatch(workflowView, /"push", "load-text-conflict"/);
   assert.doesNotMatch(app, /@push="runPush"/);
   assert.match(workflowView, /emit\("action", "continue-rebase-and-push", \{ confirmed: true \}\)/);
+  assert.match(workflowView, /emit\("action", "abort-rebase", \{ confirmed: true \}\)/);
+  assert.match(workflowView, /confirmAction\.value = "abort-rebase"/);
+  assert.match(workflowView, /const canAbortRebase = computed\(\(\) => rebaseInProgress\.value && !props\.busy\)/);
+  assert.match(workflowView, /v-if="canAbortRebase"/);
+  assert.match(workflowView, /rebase-reset-action/);
   assert.match(workflowView, /emit\("action", "ai-sync"\)/);
   assert.doesNotMatch(workflowView, /emit\("action", "sync"\)/);
   assert.match(app, /const repositoryChangingActions = new Set/);
@@ -223,6 +228,14 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /composeTableDraft/);
   assert.match(workflowView, /composeTableRows/);
   assert.match(workflowView, /tableChoiceSummary/);
+  assert.match(workflowView, /tableAlignmentMode/);
+  assert.match(workflowView, /tableKeyColumnOptions/);
+  assert.match(workflowView, /function setTableAlignmentMode\(mode\)/);
+  assert.match(workflowView, /function setTableKeyColumn\(column\)/);
+  assert.match(workflowView, /class="table-alignment-panel"/);
+  assert.match(workflowView, /class="table-key-select"/);
+  assert.match(css, /\.table-alignment-panel/);
+  assert.match(css, /\.theme-light \.table-alignment-panel/);
   assert.match(workflowView, /buildLineMergeRows/);
   assert.match(workflowView, /composeLineDraft/);
   assert.match(workflowView, /setDraftFromSource/);
@@ -263,6 +276,12 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /:data-table-column="column"/);
   assert.match(workflowView, /tableConflictItems/);
   assert.match(workflowView, /selectedTableConflict/);
+  assert.match(workflowView, /const tableSheets = ref\(\[\]\)/);
+  assert.match(workflowView, /const activeTableSheetName = ref\(""\)/);
+  assert.match(workflowView, /function setActiveTableSheet\(sheetName\)/);
+  assert.match(workflowView, /class="table-sheet-tabs"/);
+  assert.match(workflowView, /@click="setActiveTableSheet\(sheet\.name\)"/);
+  assert.match(workflowView, /sheetName: activeTableSheetName\.value/);
   assert.match(workflowView, /class="[^"]*binary-conflict-workbench/);
   assert.match(workflowView, /class="binary-choice-grid"/);
   assert.match(workflowView, /binaryChoice === 'ours'/);
@@ -316,6 +335,8 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(css, /\.candidate-highlight/);
   assert.match(css, /\.binary-choice-grid/);
   assert.match(css, /\.table-workbench-hero/);
+  assert.match(css, /\.table-sheet-tabs/);
+  assert.match(css, /\.table-sheet-tab/);
   assert.match(css, /\.table-decision-grid/);
   assert.match(css, /\.table-side-grid/);
   assert.match(css, /\.table-preview-pane/);
