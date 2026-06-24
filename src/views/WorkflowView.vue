@@ -68,6 +68,36 @@ const changedCount = computed(() => props.files.length);
 const rebaseInProgress = computed(() => Boolean(props.summary?.rebaseInProgress || props.status?.rebaseInProgress));
 const canCommit = computed(() => !commitBlockReason.value && !props.busy);
 const canPush = computed(() => !pushBlockReason.value && !props.busy);
+const pushFollowupAction = computed(() => props.operationNotice?.action === "ai-sync-and-push" ? "ai-sync-and-push" : "");
+const remotePrimaryAction = computed(() => {
+  if (pushFollowupAction.value) return pushFollowupAction.value;
+  if (rebaseInProgress.value) return "continue-rebase-and-push";
+  if (props.summary?.behind && props.summary?.ahead) return "ai-sync-and-push";
+  if (props.summary?.behind) return "sync";
+  return "push";
+});
+const pushActionLabel = computed(() => {
+  if (remotePrimaryAction.value === "sync") return props.labels.aiSync;
+  if (remotePrimaryAction.value === "ai-sync-and-push") return "AI 同步后推送";
+  if (remotePrimaryAction.value === "continue-rebase-and-push") return "继续变基并推送";
+  return props.labels.aiPush;
+});
+const pushReadyText = computed(() => {
+  if (remotePrimaryAction.value === "sync") return "AI 会先同步远端，本地提交不会被推送";
+  if (remotePrimaryAction.value === "ai-sync-and-push") return "AI 会先同步远端，自动成功后继续推送";
+  if (remotePrimaryAction.value === "continue-rebase-and-push") return "冲突已解决后继续 rebase，然后推送";
+  return "推送门禁已满足";
+});
+const remoteActionBlockReason = computed(() => {
+  if (remotePrimaryAction.value === "sync") {
+    if (!props.config?.repoPath) return "缺少仓库路径";
+    if (!props.summary) return "先检查仓库";
+    if (props.blockers.length) return "存在阻断项";
+    return "";
+  }
+  return pushBlockReason.value;
+});
+const canRunRemoteAction = computed(() => !remoteActionBlockReason.value && !props.busy);
 const visibleSelectableFiles = computed(() => {
   const query = selectionQuery.value.trim().toLowerCase();
   if (!query) return props.selectableFiles;
@@ -230,11 +260,20 @@ function runPush() {
     emit("blocked", pushBlockReason.value);
     return;
   }
-  confirmAction.value = rebaseInProgress.value ? "continue-rebase-and-push" : "push";
+  confirmAction.value = pushFollowupAction.value || (rebaseInProgress.value ? "continue-rebase-and-push" : "push");
 }
 
 function runSync() {
   confirmAction.value = "sync";
+}
+
+function runRemoteAction() {
+  if (remoteActionBlockReason.value) {
+    alert(remoteActionBlockReason.value);
+    emit("blocked", remoteActionBlockReason.value);
+    return;
+  }
+  confirmAction.value = remotePrimaryAction.value;
 }
 
 function confirmExecute() {
@@ -242,6 +281,8 @@ function confirmExecute() {
   confirmAction.value = null;
   if (action === "push") {
     emit("action", "push", { confirmed: true });
+  } else if (action === "ai-sync-and-push") {
+    emit("action", "ai-sync-and-push", { confirmed: true });
   } else if (action === "continue-rebase-and-push") {
     emit("action", "continue-rebase-and-push", { confirmed: true });
   } else if (action === "sync") {
@@ -844,7 +885,7 @@ async function ensureCommitMessage({ force = false } = {}) {
     <div class="command-bar">
       <button class="mini-command" type="button" :disabled="Boolean(busy)" @click="emit('action', 'inspect')">{{ labels.inspectRepo }}</button>
       <button class="mini-command" type="button" :disabled="!canCommit" @click="runCommit">{{ labels.aiCommit }}</button>
-      <button class="mini-command danger" type="button" :disabled="!canPush" @click="runPush">{{ labels.aiPush }}</button>
+      <button class="mini-command danger" type="button" :disabled="!canRunRemoteAction" @click="runRemoteAction">{{ pushActionLabel }}</button>
     </div>
   </header>
 
@@ -934,10 +975,9 @@ async function ensureCommitMessage({ force = false } = {}) {
         <button class="btn secondary" type="button" :disabled="Boolean(busy)" @click="emit('action', 'create-recovery')">{{ labels.createRecovery }}</button>
         <button class="btn secondary" type="button" :disabled="Boolean(busy)" @click="emit('action', 'fetch')">{{ labels.fetchRemote }}</button>
       </div>
-      <button class="btn sync-btn" type="button" :disabled="Boolean(busy)" @click="runSync">{{ labels.aiSync }}</button>
       <div class="action-stack">
-        <button class="btn danger" type="button" :disabled="!canPush" @click="runPush">{{ rebaseInProgress ? '继续变基并推送' : labels.aiPush }}</button>
-        <span class="disabled-reason">{{ pushBlockReason || (rebaseInProgress ? "冲突已解决后继续 rebase，然后推送" : "推送门禁已满足") }}</span>
+        <button class="btn danger" type="button" :disabled="!canRunRemoteAction" @click="runRemoteAction">{{ pushActionLabel }}</button>
+        <span class="disabled-reason">{{ remoteActionBlockReason || pushReadyText }}</span>
       </div>
 
       <div v-if="conflictFiles.length" class="conflict-box">
@@ -1370,13 +1410,14 @@ async function ensureCommitMessage({ force = false } = {}) {
   <Teleport to="body">
     <div v-if="confirmAction" class="confirm-overlay" @click.self="cancelConfirm">
       <div class="confirm-dialog">
-        <h3>{{ confirmAction === 'push' ? '确认推送' : confirmAction === 'continue-rebase-and-push' ? '确认继续变基并推送' : '确认同步' }}</h3>
+        <h3>{{ confirmAction === 'push' ? '确认推送' : confirmAction === 'ai-sync-and-push' ? '确认 AI 同步后推送' : confirmAction === 'continue-rebase-and-push' ? '确认继续变基并推送' : '确认同步' }}</h3>
         <p v-if="confirmAction === 'push'">即将推送到远端，请确认当前分支的提交已经完成。</p>
+        <p v-else-if="confirmAction === 'ai-sync-and-push'">AI 将先同步远端，自动 rebase 成功后继续推送；如果出现冲突会停在冲突工作台，不会 force push。</p>
         <p v-else-if="confirmAction === 'continue-rebase-and-push'">当前处于 rebase 流程。将执行 git rebase --continue，成功后直接推送到远端，不会再创建一遍普通提交。</p>
         <p v-else>即将获取远端最新状态并执行 rebase，本地提交会被变基。</p>
         <div class="confirm-actions">
           <button class="btn secondary" type="button" @click="cancelConfirm">取消</button>
-          <button class="btn" :class="{ danger: confirmAction === 'push' }" type="button" @click="confirmExecute">确认执行</button>
+          <button class="btn" :class="{ danger: confirmAction === 'push' || confirmAction === 'ai-sync-and-push' }" type="button" @click="confirmExecute">确认执行</button>
         </div>
       </div>
     </div>

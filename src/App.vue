@@ -111,13 +111,14 @@ const railCollapsed = ref(false);
 const commitResetKey = ref(0);
 const conflictCandidates = ref({});
 const operationNotice = ref(null);
-const pushSuccessActions = new Set(["push", "ai-push", "continue-rebase-and-push"]);
+const pushSuccessActions = new Set(["push", "ai-push", "continue-rebase-and-push", "ai-sync-and-push"]);
 const repositoryChangingActions = new Set([
   "inspect",
   "create-recovery",
   "fetch",
   "sync",
   "push",
+  "ai-sync-and-push",
   "resolve-conflict",
   "commit",
   "continue-rebase-and-push",
@@ -295,10 +296,20 @@ function setDetails(message) {
 function showOperationNotice(action, result = {}) {
   if (!pushSuccessActions.has(action) || result?.ok === false) return;
   const branch = result.summary?.branch || summary.value?.branch || "";
+  const title = action === "continue-rebase-and-push"
+    ? "变基已继续并推送成功"
+    : action === "ai-sync-and-push"
+      ? "AI 已同步并推送成功"
+      : "推送成功";
+  const message = action === "ai-sync-and-push" && branch
+    ? `分支 ${branch} 已同步远端并推送。`
+    : branch
+      ? `分支 ${branch} 已经推送到远端。`
+      : "远端已经收到当前分支的提交。";
   operationNotice.value = {
     tone: "success",
-    title: action === "continue-rebase-and-push" ? "变基已继续并推送成功" : "推送成功",
-    message: branch ? `分支 ${branch} 已经推送到远端。` : "远端已经收到当前分支的提交。"
+    title,
+    message
   };
 }
 
@@ -306,8 +317,9 @@ function showOperationFailureNotice(action, error = {}) {
   if (!pushSuccessActions.has(action) || !isRemoteAdvancedPushMessage(error.message)) return;
   operationNotice.value = {
     tone: "warning",
+    action: "ai-sync-and-push",
     title: "AI 判断：先同步远端",
-    message: "远端已有新提交，本次推送已取消。请点击“同步远端”，完成后再推送；不会 force push。"
+    message: "远端已有新提交，本次推送已取消。再次点击推送按钮时，AI 会先同步远端，成功后继续推送；不会 force push。"
   };
 }
 
@@ -522,6 +534,7 @@ function labelAction(action) {
     "ai-commit": zh.aiCommit,
     "ai-sync": zh.aiSync,
     "ai-push": zh.aiPush,
+    "ai-sync-and-push": "AI 同步后推送",
     "continue-rebase-and-push": "继续变基并推送"
   })[action] || action;
 }

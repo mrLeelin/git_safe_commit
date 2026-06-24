@@ -148,6 +148,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(app, /showOperationFailureNotice\(/);
   assert.match(app, /isRemoteAdvancedPushMessage/);
   assert.match(app, /AI 判断：先同步远端/);
+  assert.match(app, /action: "ai-sync-and-push"/);
   assert.match(app, /clearOperationNotice/);
   assert.match(app, /operationNotice\.value = null/);
   assert.match(app, /:operation-notice="operationNotice"/);
@@ -157,6 +158,15 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /operationNotice\.tone/);
   assert.match(workflowView, /operationNotice\.title/);
   assert.match(workflowView, /operationNotice\.message/);
+  assert.match(workflowView, /const pushFollowupAction = computed/);
+  assert.match(workflowView, /const remotePrimaryAction = computed/);
+  assert.match(workflowView, /const pushActionLabel = computed/);
+  assert.match(workflowView, /AI 同步后推送/);
+  assert.match(workflowView, /confirmAction\.value = pushFollowupAction\.value/);
+  assert.match(workflowView, /emit\("action", "ai-sync-and-push", \{ confirmed: true \}\)/);
+  assert.match(workflowView, /function runRemoteAction\(\)/);
+  assert.match(workflowView, /@click="runRemoteAction"/);
+  assert.doesNotMatch(workflowView, /class="btn sync-btn"/);
   assert.match(workflowView, /aria-label="关闭操作提示"/);
   assert.match(css, /\.operation-notice/);
   assert.match(css, /\.operation-notice\.success/);

@@ -256,6 +256,46 @@ test("workflow runner blocks push when remote advanced after the last inspect", 
   assert.notEqual(git(repo, ["rev-parse", "HEAD"]).trim(), git(repo, ["rev-parse", "@{u}"]).trim());
 });
 
+test("workflow runner syncs and pushes from the single AI push recovery action", async () => {
+  const repo = await createRepo("gsc-sync-push-runner-");
+  const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-sync-push-remote-"));
+  const other = await mkdtemp(path.join(os.tmpdir(), "gsc-sync-push-other-"));
+  git(remote, ["init", "--bare", "-b", "main"]);
+  git(repo, ["remote", "add", "origin", remote]);
+  git(repo, ["push", "-u", "origin", "main"]);
+  git(other, ["clone", remote, "."]);
+  git(other, ["config", "user.email", "remote@example.test"]);
+  git(other, ["config", "user.name", "Remote Test"]);
+  await writeFile(path.join(repo, "local.txt"), "local\n", "utf8");
+  git(repo, ["add", "local.txt"]);
+  git(repo, ["commit", "-m", "local push change"]);
+  await writeFile(path.join(other, "remote.txt"), "remote\n", "utf8");
+  git(other, ["add", "remote.txt"]);
+  git(other, ["commit", "-m", "remote race change"]);
+  git(other, ["push"]);
+
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  const result = await runner.run("ai-sync-and-push", { confirmed: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.message, "AI sync and push complete");
+  assert.equal(result.syncs.length, 1);
+  assert.equal(result.push.ok, true);
+  assert.equal(result.summary.behind, 0);
+  assert.equal(result.summary.ahead, 0);
+  assert.equal(git(repo, ["rev-parse", "HEAD"]).trim(), git(repo, ["rev-parse", "@{u}"]).trim());
+  assert.equal(git(other, ["rev-parse", "HEAD"]).trim(), git(other, ["rev-parse", "origin/main"]).trim());
+  assert.match(git(repo, ["log", "--pretty=%s", "--max-count=2"]), /local push change/);
+  assert.match(git(repo, ["log", "--pretty=%s", "--max-count=2"]), /remote race change/);
+});
+
 test("workflow runner blocks direct push without browser confirmation", async () => {
   const repo = await createRepo("gsc-push-confirm-runner-");
   const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-push-confirm-remote-"));
