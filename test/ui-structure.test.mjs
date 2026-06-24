@@ -146,7 +146,10 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(app, /const operationNotice = ref\(null\)/);
   assert.match(app, /showOperationNotice\(/);
   assert.match(app, /showOperationFailureNotice\(/);
+  assert.match(app, /clearStaleOperationNotice\(/);
   assert.match(app, /isRemoteAdvancedPushMessage/);
+  assert.match(app, /error\.data\?\.reason/);
+  assert.match(app, /error\.data\?\.recommendedAction/);
   assert.match(app, /AI 判断：先同步远端/);
   assert.match(app, /action: "ai-sync-and-push"/);
   assert.match(app, /clearOperationNotice/);

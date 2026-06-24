@@ -249,6 +249,7 @@ async function refreshRepositoryView({ inspect = false } = {}) {
     }));
   }
   await Promise.all(tasks);
+  clearStaleOperationNotice();
 }
 
 async function runAction(action, payload = {}) {
@@ -314,7 +315,7 @@ function showOperationNotice(action, result = {}) {
 }
 
 function showOperationFailureNotice(action, error = {}) {
-  if (!pushSuccessActions.has(action) || !isRemoteAdvancedPushMessage(error.message)) return;
+  if (!pushSuccessActions.has(action) || !isRemoteAdvancedPushFailure(error)) return;
   operationNotice.value = {
     tone: "warning",
     action: "ai-sync-and-push",
@@ -323,12 +324,25 @@ function showOperationFailureNotice(action, error = {}) {
   };
 }
 
+function isRemoteAdvancedPushFailure(error = {}) {
+  return error.data?.reason === "remote advanced before push"
+    || error.data?.recommendedAction === "ai-sync-and-push"
+    || isRemoteAdvancedPushMessage(error.message);
+}
+
 function isRemoteAdvancedPushMessage(message = "") {
   return /远端已有新提交|remote advanced before push|fetch first|non-fast-forward|updates were rejected/i.test(message);
 }
 
 function clearOperationNotice() {
   operationNotice.value = null;
+}
+
+function clearStaleOperationNotice() {
+  if (operationNotice.value?.action !== "ai-sync-and-push") return;
+  if (!summary.value) return;
+  if (summary.value.ahead || summary.value.behind || summary.value.rebaseInProgress) return;
+  clearOperationNotice();
 }
 
 function rememberConflictCandidate(payload) {

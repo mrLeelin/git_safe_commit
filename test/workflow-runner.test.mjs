@@ -251,7 +251,9 @@ test("workflow runner blocks push when remote advanced after the last inspect", 
   assert.equal(result.ok, false);
   assert.equal(result.blocked, true);
   assert.equal(result.reason, "remote advanced before push");
+  assert.equal(result.recommendedAction, "ai-sync-and-push");
   assert.equal(result.summary.behind, 1);
+  assert.match(result.message, /AI 同步后推送/);
   assert.match(result.message, /远端已有新提交/);
   assert.notEqual(git(repo, ["rev-parse", "HEAD"]).trim(), git(repo, ["rev-parse", "@{u}"]).trim());
 });
