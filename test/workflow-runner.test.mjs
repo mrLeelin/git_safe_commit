@@ -65,6 +65,32 @@ test("workflow runner commits selected files directly without AI", async () => {
   assert.match(git(repo, ["show", "--name-only", "--pretty=", "HEAD"]).trim(), /^tracked\.txt$/);
 });
 
+test("workflow runner discards only selected working tree paths", async () => {
+  const repo = await createRepo();
+  await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
+  await writeFile(path.join(repo, "other.txt"), "other\n", "utf8");
+  git(repo, ["add", "other.txt"]);
+  git(repo, ["commit", "-m", "add other"]);
+  await writeFile(path.join(repo, "other.txt"), "keep this change\n", "utf8");
+  await writeFile(path.join(repo, "new.txt"), "remove me\n", "utf8");
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  const result = await runner.run("discard-selected", { paths: ["tracked.txt", "new.txt"], confirmed: true });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.discarded.sort(), ["new.txt", "tracked.txt"]);
+  assert.equal((await readFile(path.join(repo, "tracked.txt"), "utf8")).replaceAll("\r\n", "\n"), "one\n");
+  await assert.rejects(() => access(path.join(repo, "new.txt")));
+  assert.equal(await readFile(path.join(repo, "other.txt"), "utf8"), "keep this change\n");
+  assert.match(git(repo, ["status", "--short"]), /^ M other\.txt/m);
+});
+
 test("workflow runner fetches remote refs directly without AI and refreshes status", async () => {
   const repo = await createRepo();
   const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-remote-"));

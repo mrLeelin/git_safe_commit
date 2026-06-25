@@ -116,7 +116,7 @@ const remoteActionBlockReason = computed(() => {
   if (remotePrimaryAction.value === "sync") {
     if (!props.config?.repoPath) return "缺少仓库路径";
     if (!props.summary) return "先检查仓库";
-    if (props.blockers.length) return "存在阻断项";
+    if (props.blockers.length) return "存在安全检查问题";
     return "";
   }
   return pushBlockReason.value;
@@ -194,7 +194,7 @@ const commitBlockReason = computed(() => {
   if (!props.config?.repoPath) return "缺少仓库路径";
   if (!props.summary) return "先检查仓库";
   if (rebaseInProgress.value) return "正在 rebase，请继续变基并推送，不要重新 commit";
-  if (props.blockers.length) return "存在阻断项";
+  if (props.blockers.length) return "存在安全检查问题";
   if (!selectedPaths.value.length) return "先选择文件";
   return "";
 });
@@ -202,7 +202,7 @@ const commitBlockReason = computed(() => {
 const pushBlockReason = computed(() => {
   if (!props.config?.repoPath) return "缺少仓库路径";
   if (!props.summary) return "先检查仓库";
-  if (props.blockers.length) return "存在阻断项";
+  if (props.blockers.length) return "存在安全检查问题";
   return "";
 });
 
@@ -373,6 +373,16 @@ function confirmAbortRebase() {
   confirmAction.value = "abort-rebase";
 }
 
+function confirmDiscardSelected() {
+  if (!selectedPaths.value.length) {
+    const reason = "先选择要丢弃的文件";
+    alert(reason);
+    emit("blocked", reason);
+    return;
+  }
+  confirmAction.value = "discard-selected";
+}
+
 function confirmExecute() {
   const action = confirmAction.value;
   confirmAction.value = null;
@@ -384,6 +394,8 @@ function confirmExecute() {
     emit("action", "continue-rebase-and-push", { confirmed: true });
   } else if (action === "abort-rebase") {
     emit("action", "abort-rebase", { confirmed: true });
+  } else if (action === "discard-selected") {
+    emit("action", "discard-selected", { paths: selectedPaths.value, confirmed: true });
   } else if (action === "sync") {
     emit("action", "ai-sync");
   }
@@ -1186,6 +1198,7 @@ async function ensureCommitMessage({ force = false } = {}) {
       <div class="commit-actions">
         <button class="btn secondary suggest" type="button" :disabled="suggestingMessage || !selectedPaths.length" @click="suggestMessage">{{ suggestingMessage ? '生成中...' : 'AI 生成说明' }}</button>
         <button class="btn" type="button" :disabled="!canCommit" @click="runCommit">{{ labels.aiCommit }}</button>
+        <button class="btn danger discard-selected" type="button" :disabled="Boolean(busy) || !selectedPaths.length" @click="confirmDiscardSelected">丢弃选中</button>
         <span class="disabled-reason">{{ commitBlockReason || "将按选中路径提交" }}</span>
       </div>
     </article>
@@ -1703,15 +1716,16 @@ async function ensureCommitMessage({ force = false } = {}) {
   <Teleport to="body">
     <div v-if="confirmAction" class="confirm-overlay" @click.self="cancelConfirm">
       <div class="confirm-dialog">
-        <h3>{{ confirmAction === 'push' ? '确认推送' : confirmAction === 'ai-sync-and-push' ? '确认 AI 同步后推送' : confirmAction === 'continue-rebase-and-push' ? '确认继续变基并推送' : confirmAction === 'abort-rebase' ? '确认复位 rebase' : '确认同步' }}</h3>
+        <h3>{{ confirmAction === 'push' ? '确认推送' : confirmAction === 'ai-sync-and-push' ? '确认 AI 同步后推送' : confirmAction === 'continue-rebase-and-push' ? '确认继续变基并推送' : confirmAction === 'abort-rebase' ? '确认复位 rebase' : confirmAction === 'discard-selected' ? '确认丢弃选中' : '确认同步' }}</h3>
         <p v-if="confirmAction === 'push'">即将推送到远端，请确认当前分支的提交已经完成。</p>
         <p v-else-if="confirmAction === 'ai-sync-and-push'">AI 将先同步远端，自动 rebase 成功后继续推送；如果出现冲突会停在冲突工作台，不会 force push。</p>
         <p v-else-if="confirmAction === 'continue-rebase-and-push'">当前处于 rebase 流程。将执行 git rebase --continue，成功后直接推送到远端，不会再创建一遍普通提交。</p>
         <p v-else-if="confirmAction === 'abort-rebase'">当前处于 rebase 流程。将执行 git rebase --abort，回退到 rebase 开始之前；不会执行 reset --hard。</p>
+        <p v-else-if="confirmAction === 'discard-selected'">将把当前勾选路径的本地改动从工作区移走，并保存到一个 Git stash 恢复点；未勾选路径会保留。</p>
         <p v-else>即将获取远端最新状态并执行 rebase，本地提交会被变基。</p>
         <div class="confirm-actions">
           <button class="btn secondary" type="button" @click="cancelConfirm">取消</button>
-          <button class="btn" :class="{ danger: confirmAction === 'push' || confirmAction === 'ai-sync-and-push' || confirmAction === 'abort-rebase' }" type="button" @click="confirmExecute">确认执行</button>
+          <button class="btn" :class="{ danger: confirmAction === 'push' || confirmAction === 'ai-sync-and-push' || confirmAction === 'abort-rebase' || confirmAction === 'discard-selected' }" type="button" @click="confirmExecute">确认执行</button>
         </div>
       </div>
     </div>

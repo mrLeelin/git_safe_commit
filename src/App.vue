@@ -123,6 +123,7 @@ const repositoryChangingActions = new Set([
   "ai-sync-and-push",
   "resolve-conflict",
   "commit",
+  "discard-selected",
   "continue-rebase-and-push",
   "abort-rebase",
   "ai-commit",
@@ -200,7 +201,7 @@ const nextStep = computed(() => {
   if (!view.config?.repoPath) return "先在设置里填写仓库路径。";
   if (!selectedAi.value) return "先在设置里选择一个本机可用的 AI。";
   if (!summary.value) return "先检查仓库，确认分支、上游、工作区、冲突和 diff 检查结果。";
-  if (blockers.value.length) return "先处理阻断项；冲突、diff 检查失败或缺少上游时不会提交或推送。";
+  if (blockers.value.length) return "先处理冲突；未合并文件或冲突标记会阻止提交或推送。";
   if (summary.value.behind && !recovery.value) return "分支落后时先创建恢复点，再同步远端。";
   if (summary.value.behind) return "可以同步远端。同步使用 fetch + rebase，不执行 git pull。";
   if (summary.value.ahead) return "可以推送。若启用了推送确认，需要先勾选确认框。";
@@ -374,12 +375,6 @@ function formatBlocker(blocker, candidateCount, unmergedCount) {
   }
   if (blocker === "conflict markers present") {
     return "原文件仍包含冲突标记（<<<<<<< / ======= / >>>>>>>），Git 不能提交。";
-  }
-  if (blocker === "unstaged diff check failed") {
-    return "工作区检查未通过，通常是因为原文件里还有冲突标记或格式错误。";
-  }
-  if (blocker === "staged diff check failed") {
-    return "已暂存内容检查未通过，请先检查暂存区里的冲突标记或格式错误。";
   }
   return blocker;
 }
@@ -563,6 +558,7 @@ function labelAction(action) {
     sync: zh.aiSync,
     "resolve-conflict": zh.conflictFiles,
     commit: zh.aiCommit,
+    "discard-selected": "丢弃选中",
     push: zh.aiPush,
     "ai-commit": zh.aiCommit,
     "ai-sync": zh.aiSync,

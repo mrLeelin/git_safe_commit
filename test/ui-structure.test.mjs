@@ -142,6 +142,10 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /async function ensureCommitMessage/);
   assert.match(workflowView, /const message = await ensureCommitMessage\(\)/);
   assert.match(workflowView, /emit\("commit", \{ paths: selectedPaths\.value, message \}\)/);
+  assert.match(workflowView, /function confirmDiscardSelected\(\)/);
+  assert.match(workflowView, /confirmAction\.value = "discard-selected"/);
+  assert.match(workflowView, /emit\("action", "discard-selected", \{ paths: selectedPaths\.value, confirmed: true \}\)/);
+  assert.match(workflowView, /class="btn danger discard-selected"/);
   assert.doesNotMatch(workflowView, /if \(!commitMessage\.value\.trim\(\)\) return/);
   assert.match(workflowView, /class="commit-actions"[\s\S]*@click="suggestMessage"[\s\S]*@click="runCommit"/);
   assert.match(app, /runAction\("commit", payload\)/);
@@ -155,7 +159,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(app, /formatBlocker\(blocker, candidateCount, unmergedCount\)/);
   assert.match(app, /候选文件只是草稿，还没有应用到原冲突文件/);
   assert.match(app, /原文件仍包含冲突标记/);
-  assert.match(app, /工作区检查未通过/);
+  assert.doesNotMatch(app, /工作区格式检查未通过/);
   assert.match(workflowView, /commitResetKey/);
   assert.match(app, /commitResetKey\.value \+= 1/);
   assert.match(app, /const operationNotice = ref\(null\)/);
@@ -210,6 +214,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.doesNotMatch(workflowView, /emit\("action", "sync"\)/);
   assert.match(app, /const repositoryChangingActions = new Set/);
   assert.match(app, /repositoryChangingActions\.has\(action\)/);
+  assert.match(app, /"discard-selected"/);
   assert.match(app, /async function refreshRepositoryView/);
   assert.match(app, /await refreshRepositoryView\(\{ inspect: true \}\)/);
   assert.match(app, /catch \(error\)[\s\S]*refreshRepositoryView\(\{ inspect: true \}\)/);

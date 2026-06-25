@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { collectGitState } from "../lib/git-state.mjs";
+import { collectGitState, summarizeGitState } from "../lib/git-state.mjs";
 
 function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
@@ -34,4 +34,28 @@ test("collectGitState reports branch and dirty paths", async () => {
   assert.deepEqual(state.unstaged.map((item) => item.path), ["tracked.txt"]);
   assert.deepEqual(state.untracked, ["new.txt"]);
   assert.equal(state.unmerged.length, 0);
+});
+
+test("summarizeGitState does not block whitespace-only diff check failures", () => {
+  const summary = summarizeGitState({
+    branch: "main",
+    upstream: "origin/main",
+    ahead: 0,
+    behind: 0,
+    staged: [],
+    unstaged: [{ status: "M", path: "tracked.txt" }],
+    untracked: [],
+    unmerged: [],
+    conflictMarkers: [],
+    rebaseInProgress: false,
+    checks: {
+      unstaged: {
+        ok: false,
+        stdout: "tracked.txt:18: trailing whitespace.\n+            \n"
+      },
+      staged: { ok: true, stdout: "" }
+    }
+  });
+
+  assert.deepEqual(summary.blockers, []);
 });
