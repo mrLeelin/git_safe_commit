@@ -146,6 +146,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /confirmAction\.value = "discard-selected"/);
   assert.match(workflowView, /emit\("action", "discard-selected", \{ paths: selectedPaths\.value, confirmed: true \}\)/);
   assert.match(workflowView, /class="btn danger discard-selected"/);
+  assert.match(css, /\.theme-dark \.commit-actions \.btn\.danger/);
   assert.doesNotMatch(workflowView, /if \(!commitMessage\.value\.trim\(\)\) return/);
   assert.match(workflowView, /class="commit-actions"[\s\S]*@click="suggestMessage"[\s\S]*@click="runCommit"/);
   assert.match(app, /runAction\("commit", payload\)/);
