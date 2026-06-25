@@ -35,6 +35,16 @@ test("loadConfig applies defaults and preserves explicit values", async () => {
   assert.equal(config.workflow.requireConfirmBeforePush, true);
 });
 
+test("loadConfig accepts UTF-8 config files with a byte order mark", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "gsc-config-bom-"));
+  const configPath = path.join(dir, "config.json");
+  await writeFile(configPath, `\uFEFF${JSON.stringify({ repoPath: dir })}`, "utf8");
+
+  const config = await loadConfig(configPath);
+
+  assert.equal(config.repoPath, path.resolve(dir));
+});
+
 test("saveConfig records unique repositories with the active repo first", async () => {
   const firstRepo = await mkdtemp(path.join(os.tmpdir(), "gsc-repo-first-"));
   const secondRepo = await mkdtemp(path.join(os.tmpdir(), "gsc-repo-second-"));

@@ -1,6 +1,7 @@
 import express from "express";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
@@ -255,9 +256,13 @@ app.get("/git/file-diff-view", async (req, res, next) => {
   }
 });
 
-if (process.env.NODE_ENV === "production") {
-  app.use(express.static(path.join(toolRoot, "dist")));
-  app.get(/.*/, (_req, res) => res.sendFile(path.join(toolRoot, "dist", "index.html")));
+const distRoot = path.join(toolRoot, "dist");
+const srcRoot = path.join(toolRoot, "src");
+const useBuiltFrontend = process.env.NODE_ENV === "production" || (existsSync(distRoot) && !existsSync(srcRoot));
+
+if (useBuiltFrontend) {
+  app.use(express.static(distRoot));
+  app.get(/.*/, (_req, res) => res.sendFile(path.join(distRoot, "index.html")));
 } else {
   const { createServer: createViteServer } = await import("vite");
   const vite = await createViteServer({ root: toolRoot, server: { middlewareMode: true }, appType: "spa" });
