@@ -19,6 +19,53 @@ const commitDetail = ref(null);
 const loadingDetail = ref(false);
 let detailRequestId = 0;
 
+const laneStep = 22;
+const laneOrigin = 33;
+const graphRowHeight = 24;
+const graphMinWidth = 142;
+
+function laneX(lane) {
+  return lane * laneStep + laneOrigin;
+}
+
+function graphLaneWidth(commit) {
+  const lanes = [0, commit.nodeLane, ...commit.branchLines, ...commit.mergeJoinLanes, ...commit.branchSplitLanes];
+  const maxLane = Math.max(...lanes.filter((lane) => Number.isFinite(lane)));
+  return Math.max(graphMinWidth, laneX(maxLane) + 18);
+}
+
+function graphVerticalLanes(commit) {
+  const endingLanes = Array.isArray(commit.branchSplitLanes) ? commit.branchSplitLanes : [];
+  return uniqueGraphLanes([0, commit.nodeLane, ...commit.branchLines])
+    .filter((lane) => lane === commit.nodeLane || !endingLanes.includes(lane));
+}
+
+function verticalPath(commit, lane) {
+  const x = laneX(lane);
+  const startY = commit.startsLane && lane === commit.nodeLane ? 16 : -1;
+  return `M ${x} ${startY} L ${x} ${graphRowHeight + 1}`;
+}
+
+function mergeCurvePath(commit, lane) {
+  const fromX = laneX(commit.nodeLane);
+  const toX = laneX(lane);
+  return `M ${fromX} 12 C ${fromX} 17 ${toX} 17 ${toX} ${graphRowHeight + 1}`;
+}
+
+function splitCurvePath(commit, lane) {
+  const fromX = laneX(lane);
+  const toX = laneX(commit.nodeLane);
+  return `M ${fromX} -1 C ${fromX} 7 ${toX} 7 ${toX} 12`;
+}
+
+function graphLaneClass(lane) {
+  return `lane-${Math.abs(lane) % 6}`;
+}
+
+function uniqueGraphLanes(lanes) {
+  return [...new Set(lanes.filter((lane) => Number.isFinite(lane)))].sort((left, right) => left - right);
+}
+
 function statusIcon(status) {
   if (status.startsWith("A")) return "+";
   if (status.startsWith("D")) return "-";
@@ -113,26 +160,42 @@ watch(
               @click="selectCommit(commit.hash)"
             >
               <div class="commit-lanes">
-                <span class="mainline"></span>
-                <span
-                  v-for="lane in commit.branchLines"
-                  :key="lane"
-                  class="branchline"
-                  :style="{ left: `${lane * 22 + 32}px` }"
-                ></span>
-                <span
-                  v-for="lane in commit.mergeJoinLanes"
-                  :key="`join-${lane}`"
-                  class="merge-join"
-                  :style="{ width: `${lane * 22}px` }"
-                ></span>
-                <span
-                  v-for="lane in commit.branchSplitLanes"
-                  :key="`split-${lane}`"
-                  class="branch-split"
-                  :style="{ width: `${lane * 22}px` }"
-                ></span>
-                <span class="node" :style="{ left: `${commit.nodeLane * 22 + 29}px` }"></span>
+                <svg
+                  class="graph-svg"
+                  :viewBox="`0 0 ${graphLaneWidth(commit)} ${graphRowHeight}`"
+                  :width="graphLaneWidth(commit)"
+                  :height="graphRowHeight"
+                  aria-hidden="true"
+                >
+                  <path
+                    v-for="lane in graphVerticalLanes(commit)"
+                    :key="`line-${lane}`"
+                    class="graph-path graph-vertical"
+                    :class="graphLaneClass(lane)"
+                    :d="verticalPath(commit, lane)"
+                  />
+                  <path
+                    v-for="lane in commit.mergeJoinLanes"
+                    :key="`join-${lane}`"
+                    class="graph-path graph-curve graph-merge"
+                    :class="graphLaneClass(lane)"
+                    :d="mergeCurvePath(commit, lane)"
+                  />
+                  <path
+                    v-for="lane in commit.branchSplitLanes"
+                    :key="`split-${lane}`"
+                    class="graph-path graph-curve graph-split"
+                    :class="graphLaneClass(lane)"
+                    :d="splitCurvePath(commit, lane)"
+                  />
+                  <circle
+                    class="graph-node"
+                    :class="graphLaneClass(commit.nodeLane)"
+                    :cx="laneX(commit.nodeLane)"
+                    cy="12"
+                    r="4"
+                  />
+                </svg>
               </div>
               <div class="commit-main">
                 <div class="commit-title">

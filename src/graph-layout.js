@@ -1,94 +1,120 @@
 export function buildCommitGraphRows(commits) {
   const rows = Array.isArray(commits) ? commits : [];
-  const indexByHash = new Map(rows.map((commit, index) => [commit.hash, index]));
-  const commitByHash = new Map(rows.map((commit) => [commit.hash, commit]));
-  const branchRanges = [];
+  const stashInternalParents = collectStashInternalParents(rows);
+  const visibleRows = rows.filter((commit) => !stashInternalParents.has(commit.hash));
+  const lanes = [];
 
-  rows.forEach((commit, index) => {
-    const parents = Array.isArray(commit.parents) ? commit.parents : [];
-    const mainParentHash = parents[0];
-    parents.slice(1).forEach((parentHash, parentIndex) => {
-      const branchParentIndex = indexByHash.get(parentHash);
-      if (Number.isInteger(branchParentIndex) && branchParentIndex > index) {
-        const ancestorIndex = findVisibleCommonAncestorIndex({
-          mainParentHash,
-          branchParentHash: parentHash,
-          commitByHash,
-          indexByHash
-        });
-        branchRanges.push({
-          start: index,
-          tip: branchParentIndex,
-          end: Math.max(branchParentIndex, ancestorIndex ?? branchParentIndex),
-          lane: parentIndex + 1,
-          parentHash
-        });
-      }
-    });
-  });
+  return visibleRows.map((commit, index) => {
+    const originalParents = Array.isArray(commit.parents) ? commit.parents : [];
+    const isStash = isStashCommit(commit);
+    const parents = isStash ? originalParents.slice(0, 1) : originalParents;
+    let nodeLane = lanes.indexOf(commit.hash);
+    const openedLane = nodeLane === -1;
 
-  return rows.map((commit, index) => {
-    const branchLines = uniqueSorted(
-      branchRanges
-        .filter((range) => index >= range.start && index <= range.end)
-        .map((range) => range.lane)
-    );
-    const endingBranch = branchRanges.find((range) => range.tip === index);
+    if (openedLane) {
+      nodeLane = firstFreeLane(lanes);
+      lanes[nodeLane] = commit.hash;
+    }
+
+    const mergeParentLanes = parents.slice(1).map((parentHash) => ensureLane(lanes, parentHash));
+    const duplicateLanes = laneIndexes(lanes, commit.hash);
+    const branchLines = activeBranchLines(lanes, nodeLane);
     const mergeJoinLanes = uniqueSorted(
-      branchRanges
-        .filter((range) => range.start === index)
-        .map((range) => range.lane)
+      mergeParentLanes.filter((lane) => lane > 0)
     );
     const branchSplitLanes = uniqueSorted(
-      branchRanges
-        .filter((range) => range.end === index && range.tip !== index)
-        .map((range) => range.lane)
+      duplicateLanes.filter((lane) => lane > 0 && lane !== nodeLane)
     );
-    const nodeLane = endingBranch ? endingBranch.lane : 0;
 
-    return {
+    const row = {
       ...commit,
+      rowIndex: index,
       nodeLane,
+      startsLane: openedLane,
       branchLines,
       mergeJoinLanes,
       branchSplitLanes,
-      isMerge: Array.isArray(commit.parents) && commit.parents.length > 1,
+      isStash,
+      isMerge: originalParents.length > 1 && !isStash,
       showMergeJoin: mergeJoinLanes.length > 0,
       showBranchSplit: branchSplitLanes.length > 0,
-      endsBranch: Boolean(endingBranch)
+      endsBranch: nodeLane > 0
     };
+
+    advanceLanes(lanes, nodeLane, commit.hash, parents);
+    return row;
   });
 }
 
-function findVisibleCommonAncestorIndex({ mainParentHash, branchParentHash, commitByHash, indexByHash }) {
-  if (!mainParentHash || !branchParentHash) return null;
-
-  const mainAncestors = collectVisibleAncestors(mainParentHash, commitByHash, indexByHash);
-  let current = branchParentHash;
-  const seen = new Set();
-
-  while (current && !seen.has(current)) {
-    seen.add(current);
-    if (mainAncestors.has(current)) return indexByHash.get(current);
-    const commit = commitByHash.get(current);
-    current = Array.isArray(commit?.parents) ? commit.parents[0] : "";
-  }
-
-  return null;
+function collectStashInternalParents(rows) {
+  const hashes = new Set();
+  rows.forEach((commit) => {
+    if (!isStashCommit(commit) || !Array.isArray(commit.parents)) return;
+    commit.parents.slice(1).forEach((hash) => {
+      if (hash) hashes.add(hash);
+    });
+  });
+  return hashes;
 }
 
-function collectVisibleAncestors(startHash, commitByHash, indexByHash) {
-  const ancestors = new Set();
-  let current = startHash;
+function isStashCommit(commit) {
+  return Array.isArray(commit.refs) && commit.refs.some((ref) => {
+    const value = String(ref || "");
+    return value === "refs/stash" || value === "stash" || value.startsWith("stash@");
+  });
+}
 
-  while (current && !ancestors.has(current)) {
-    if (!indexByHash.has(current)) break;
-    ancestors.add(current);
-    const commit = commitByHash.get(current);
-    current = Array.isArray(commit?.parents) ? commit.parents[0] : "";
+function advanceLanes(lanes, nodeLane, hash, parents) {
+  if (!parents.length) {
+    clearMatchingLanes(lanes, hash);
+  } else {
+    lanes[nodeLane] = parents[0] || "";
+    laneIndexes(lanes, hash).filter((lane) => lane !== nodeLane).forEach((lane) => {
+      lanes[lane] = "";
+    });
   }
 
-  return ancestors;
+  trimTrailingFreeLanes(lanes);
+}
+
+function ensureLane(lanes, hash) {
+  if (!hash) return -1;
+  const existing = lanes.indexOf(hash);
+  if (existing !== -1) return existing;
+  const lane = firstFreeLane(lanes);
+  lanes[lane] = hash;
+  return lane;
+}
+
+function clearMatchingLanes(lanes, hash) {
+  laneIndexes(lanes, hash).forEach((lane) => {
+    lanes[lane] = "";
+  });
+}
+
+function trimTrailingFreeLanes(lanes) {
+  while (lanes.length && !lanes.at(-1)) lanes.pop();
+}
+
+function activeBranchLines(lanes, nodeLane) {
+  return uniqueSorted(
+    lanes
+      .map((hash, lane) => ({ hash, lane }))
+      .filter(({ hash, lane }) => hash && lane > 0)
+      .map(({ lane }) => lane)
+      .concat(nodeLane > 0 ? [nodeLane] : [])
+  );
+}
+
+function laneIndexes(lanes, hash) {
+  return lanes
+    .map((laneHash, lane) => laneHash === hash ? lane : -1)
+    .filter((lane) => lane >= 0);
+}
+
+function firstFreeLane(lanes) {
+  const index = lanes.findIndex((hash) => !hash);
+  return index === -1 ? lanes.length : index;
 }
 
 function uniqueSorted(values) {

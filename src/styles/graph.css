@@ -113,7 +113,7 @@
   min-width: 820px;
   min-height: 24px;
   display: grid;
-  grid-template-columns: 118px minmax(320px, 1fr) 126px 78px 136px;
+  grid-template-columns: 148px minmax(320px, 1fr) 126px 78px 136px;
   align-items: center;
   background: #0d1625;
   color: #e5edf7;
@@ -137,63 +137,84 @@
 .commit-row.head.selected {
   background: #3d4654;
 }
-.commit-lanes { position: relative; height: 24px; }
-.mainline {
-  position: absolute;
-  top: -1px;
-  bottom: -1px;
-  left: 32px;
-  width: 2px;
-  background: #d18a00;
+.commit-lanes {
+  position: relative;
+  height: 24px;
+  overflow: visible;
+}
+.graph-svg {
+  display: block;
+  height: 24px;
+  overflow: visible;
+}
+.graph-path {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   opacity: .96;
+  vector-effect: non-scaling-stroke;
 }
-.branchline {
-  position: absolute;
-  top: -1px;
-  bottom: -1px;
-  width: 2px;
-  background: #58b8ff;
-  opacity: .9;
+.graph-vertical {
+  opacity: .82;
 }
-.merge-join {
-  position: absolute;
-  top: 11px;
-  left: 33px;
-  height: 2px;
-  background: #58b8ff;
-  opacity: .95;
+.graph-curve {
+  opacity: .98;
 }
-.branch-split {
-  position: absolute;
-  top: 11px;
-  left: 33px;
-  height: 2px;
-  background: #58b8ff;
-  opacity: .7;
+.graph-node {
+  stroke: #0d1625;
+  stroke-width: 1.5;
+  paint-order: stroke fill;
 }
-.node {
-  position: absolute;
-  top: 7px;
-  left: 29px;
-  width: 8px;
-  height: 8px;
-  border: 1px solid #0d1625;
-  border-radius: 50%;
-  background: #f0a000;
-  box-shadow: 0 0 0 1px #f0a000;
+.graph-path.lane-0,
+.graph-path.lane-1,
+.graph-node.lane-0,
+.graph-node.lane-1 {
+  stroke: #f0a000;
 }
-.commit-row.merge .node {
-  background: #ffd166;
-  box-shadow: 0 0 0 1px #ffd166;
+.graph-node.lane-0,
+.graph-node.lane-1 {
+  fill: #f0a000;
 }
-.commit-row.branch-end .node {
-  background: #58b8ff;
-  box-shadow: 0 0 0 1px #58b8ff;
+.graph-path.lane-2,
+.graph-node.lane-2 {
+  stroke: #ef4444;
 }
-.commit-row.selected .node {
-  border-color: #0d1625;
-  background: #f0a000;
-  box-shadow: 0 0 0 2px #f0a000, 0 0 0 4px rgba(240, 160, 0, .18);
+.graph-node.lane-2 {
+  fill: #ef4444;
+}
+.graph-path.lane-3,
+.graph-node.lane-3 {
+  stroke: #38bdf8;
+}
+.graph-node.lane-3 {
+  fill: #38bdf8;
+}
+.graph-path.lane-4,
+.graph-node.lane-4 {
+  stroke: #22c55e;
+}
+.graph-node.lane-4 {
+  fill: #22c55e;
+}
+.graph-path.lane-5,
+.graph-node.lane-5 {
+  stroke: #c084fc;
+}
+.graph-node.lane-5 {
+  fill: #c084fc;
+}
+.commit-row.merge .graph-node {
+  fill: #ffd166;
+  stroke: #0d1625;
+}
+.commit-row.branch-end .graph-node:not(.lane-0):not(.lane-1) {
+  stroke: #0d1625;
+}
+.commit-row.selected .graph-node {
+  stroke: #0d1625;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 4px rgba(240, 160, 0, .7));
 }
 .commit-main {
   min-width: 0;
@@ -347,8 +368,8 @@
 .theme-dark .commit-row.head.selected {
   background: #3d4654;
 }
-.theme-dark .node {
-  border-color: #0d1625;
+.theme-dark .graph-node {
+  stroke: #0d1625;
 }
 .theme-dark .commit-row:not(.head) .subject {
   color: #f8fafc;
