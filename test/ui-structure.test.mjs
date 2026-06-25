@@ -178,6 +178,13 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /operationNotice\.message/);
   assert.match(workflowView, /const pushFollowupAction = computed/);
   assert.match(workflowView, /const remotePrimaryAction = computed/);
+  assert.match(workflowView, /const remoteDivergenceTone = computed/);
+  assert.match(workflowView, /ahead > 0 && behind > 0/);
+  assert.match(workflowView, /behind > 0/);
+  assert.match(workflowView, /ahead > 0/);
+  assert.match(workflowView, /const worktreeTone = computed/);
+  assert.match(workflowView, /:class="remoteDivergenceTone"/);
+  assert.match(workflowView, /:class="worktreeTone"/);
   assert.match(workflowView, /const pushActionLabel = computed/);
   assert.match(workflowView, /AI 同步后推送/);
   assert.match(workflowView, /confirmAction\.value = pushFollowupAction\.value/);
@@ -510,6 +517,8 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(css, /\.command-bar/);
   assert.match(css, /\.primary-grid/);
   assert.match(css, /\.commit-card/);
+  assert.match(css, /\.metric\.info/);
+  assert.match(css, /\.theme-dark \.status-metrics \.metric\.info/);
   assert.match(css, /\.selection-filter/);
   assert.match(css, /\.directory-actions/);
   assert.match(css, /\.queue-row/);

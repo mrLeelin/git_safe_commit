@@ -87,6 +87,19 @@ const remotePrimaryAction = computed(() => {
   if (props.summary?.behind) return "sync";
   return "push";
 });
+const remoteDivergenceTone = computed(() => {
+  if (!props.summary) return "";
+  const ahead = Number(props.summary.ahead || 0);
+  const behind = Number(props.summary.behind || 0);
+  if (ahead > 0 && behind > 0) return "bad";
+  if (behind > 0) return "warn";
+  if (ahead > 0) return "info";
+  return "ok";
+});
+const worktreeTone = computed(() => {
+  if (!props.summary) return "";
+  return props.summary.cleanWorktree ? "ok" : "warn";
+});
 const pushActionLabel = computed(() => {
   if (remotePrimaryAction.value === "sync") return props.labels.aiSync;
   if (remotePrimaryAction.value === "ai-sync-and-push") return "AI 同步后推送";
@@ -1100,8 +1113,8 @@ async function ensureCommitMessage({ force = false } = {}) {
   <section class="status-metrics">
     <div class="metric" :class="readiness.tone"><span>{{ labels.safety }}</span><strong>{{ readiness.label }}</strong></div>
     <div class="metric"><span>{{ labels.branch }}</span><strong>{{ summary?.branch || "-" }}</strong></div>
-    <div class="metric"><span>{{ labels.ahead }} / {{ labels.behind }}</span><strong>{{ summary ? `${summary.ahead} / ${summary.behind}` : "-" }}</strong></div>
-    <div class="metric"><span>{{ labels.worktree }}</span><strong>{{ summary ? (summary.cleanWorktree ? labels.clean : labels.dirty) : labels.unchecked }}</strong></div>
+    <div class="metric" :class="remoteDivergenceTone"><span>{{ labels.ahead }} / {{ labels.behind }}</span><strong>{{ summary ? `${summary.ahead} / ${summary.behind}` : "-" }}</strong></div>
+    <div class="metric" :class="worktreeTone"><span>{{ labels.worktree }}</span><strong>{{ summary ? (summary.cleanWorktree ? labels.clean : labels.dirty) : labels.unchecked }}</strong></div>
   </section>
 
   <section class="primary-grid">

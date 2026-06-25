@@ -417,6 +417,7 @@ h3 { font-size: 15px; margin-bottom: 10px; }
   line-height: 1.1;
 }
 .metric.ok { border-color: #a7f3d0; background: var(--green-soft); }
+.metric.info { border-color: #bfdbfe; background: #eff6ff; }
 .metric.warn { border-color: #fde68a; background: var(--amber-soft); }
 .metric.bad { border-color: #fecaca; background: var(--red-soft); }
 
@@ -2532,6 +2533,10 @@ textarea {
 .theme-dark .status-metrics .metric.ok {
   border-color: #166534;
   background: #14532d;
+}
+.theme-dark .status-metrics .metric.info {
+  border-color: #1d4ed8;
+  background: #12325c;
 }
 .theme-dark .status-metrics .metric.warn {
   border-color: #92400e;
