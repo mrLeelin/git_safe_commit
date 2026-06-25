@@ -324,6 +324,41 @@ test("workflow runner syncs and pushes from the single AI push recovery action",
   assert.match(git(repo, ["log", "--pretty=%s", "--max-count=2"]), /remote race change/);
 });
 
+test("workflow runner temporarily stashes dirty worktree while AI sync-and-push pushes committed work", async () => {
+  const repo = await createRepo("gsc-sync-push-dirty-runner-");
+  const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-sync-push-dirty-remote-"));
+  git(remote, ["init", "--bare", "-b", "main"]);
+  git(repo, ["remote", "add", "origin", remote]);
+  git(repo, ["push", "-u", "origin", "main"]);
+  await writeFile(path.join(repo, "tracked.txt"), "committed\n", "utf8");
+  git(repo, ["commit", "-am", "local push change"]);
+  const committedHead = git(repo, ["rev-parse", "HEAD"]).trim();
+  await writeFile(path.join(repo, "tracked.txt"), "dirty after commit\n", "utf8");
+  await writeFile(path.join(repo, "scratch.txt"), "scratch\n", "utf8");
+
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  const result = await runner.run("ai-sync-and-push", { confirmed: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.push.ok, true);
+  assert.equal(result.syncStash.stash.ok, true);
+  assert.equal(result.syncStash.apply.ok, true);
+  assert.equal(result.syncStash.drop.ok, true);
+  assert.equal(result.summary.ahead, 0);
+  assert.equal(result.summary.cleanWorktree, false);
+  assert.equal(git(repo, ["rev-parse", "@{u}"]).trim(), committedHead);
+  assert.equal(normalizeNewlines(await readFile(path.join(repo, "tracked.txt"), "utf8")), "dirty after commit\n");
+  assert.equal(normalizeNewlines(await readFile(path.join(repo, "scratch.txt"), "utf8")), "scratch\n");
+  assert.equal(git(repo, ["stash", "list"]).trim(), "");
+});
+
 test("workflow runner blocks direct push without browser confirmation", async () => {
   const repo = await createRepo("gsc-push-confirm-runner-");
   const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-push-confirm-remote-"));

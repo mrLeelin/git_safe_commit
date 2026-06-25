@@ -84,6 +84,7 @@ const remotePrimaryAction = computed(() => {
   if (pushFollowupAction.value) return pushFollowupAction.value;
   if (rebaseInProgress.value) return "continue-rebase-and-push";
   if (props.summary?.behind && props.summary?.ahead) return "ai-sync-and-push";
+  if (props.summary?.ahead && !props.summary?.cleanWorktree) return "ai-sync-and-push";
   if (props.summary?.behind) return "sync";
   return "push";
 });

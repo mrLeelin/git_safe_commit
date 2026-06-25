@@ -185,6 +185,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /const remotePrimaryAction = computed/);
   assert.match(workflowView, /const remoteDivergenceTone = computed/);
   assert.match(workflowView, /ahead > 0 && behind > 0/);
+  assert.match(workflowView, /props\.summary\?\.ahead && !props\.summary\?\.cleanWorktree/);
   assert.match(workflowView, /behind > 0/);
   assert.match(workflowView, /ahead > 0/);
   assert.match(workflowView, /const worktreeTone = computed/);
