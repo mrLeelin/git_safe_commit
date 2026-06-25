@@ -36,26 +36,27 @@ function graphLaneWidth(commit) {
 
 function graphVerticalLanes(commit) {
   const endingLanes = Array.isArray(commit.branchSplitLanes) ? commit.branchSplitLanes : [];
+  const joiningLanes = Array.isArray(commit.mergeJoinLanes) ? commit.mergeJoinLanes : [];
   return uniqueGraphLanes([0, commit.nodeLane, ...commit.branchLines])
-    .filter((lane) => lane === commit.nodeLane || !endingLanes.includes(lane));
+    .filter((lane) => lane === commit.nodeLane || (!endingLanes.includes(lane) && !joiningLanes.includes(lane)));
 }
 
 function verticalPath(commit, lane) {
   const x = laneX(lane);
-  const startY = commit.startsLane && lane === commit.nodeLane ? 16 : -1;
-  return `M ${x} ${startY} L ${x} ${graphRowHeight + 1}`;
+  const startY = commit.startsLane && lane === commit.nodeLane ? 16 : 0;
+  return `M ${x} ${startY} L ${x} ${graphRowHeight}`;
 }
 
 function mergeCurvePath(commit, lane) {
   const fromX = laneX(commit.nodeLane);
   const toX = laneX(lane);
-  return `M ${fromX} 12 C ${fromX} 17 ${toX} 17 ${toX} ${graphRowHeight + 1}`;
+  return `M ${fromX} 12 C ${fromX} 17 ${toX} 17 ${toX} ${graphRowHeight}`;
 }
 
 function splitCurvePath(commit, lane) {
   const fromX = laneX(lane);
   const toX = laneX(commit.nodeLane);
-  return `M ${fromX} -1 C ${fromX} 7 ${toX} 7 ${toX} 12`;
+  return `M ${fromX} 0 C ${fromX} 7 ${toX} 7 ${toX} 12`;
 }
 
 function graphLaneClass(lane) {

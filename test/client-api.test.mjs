@@ -35,3 +35,29 @@ test("client API preserves structured action error details", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("client API reports reason-only business failures instead of HTTP 200", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    ok: false,
+    blocked: true,
+    reason: "push confirmation required"
+  }), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  });
+
+  try {
+    await assert.rejects(
+      () => runAction("push"),
+      (error) => {
+        assert.equal(error.message, "push confirmation required");
+        assert.equal(error.status, 200);
+        assert.equal(error.data.reason, "push confirmation required");
+        return true;
+      }
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

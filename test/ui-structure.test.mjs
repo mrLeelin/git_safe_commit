@@ -479,11 +479,12 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(gitGraphView, /splitCurvePath\(commit, lane\)/);
   assert.match(gitGraphView, /laneX\(commit\.nodeLane\)/);
   assert.match(gitGraphView, /function verticalPath\(commit, lane\)/);
-  assert.match(gitGraphView, /commit\.startsLane && lane === commit\.nodeLane \? 16 : -1/);
+  assert.match(gitGraphView, /commit\.startsLane && lane === commit\.nodeLane \? 16 : 0/);
   assert.match(gitGraphView, /:d="verticalPath\(commit, lane\)"/);
-  assert.match(gitGraphView, /function graphVerticalLanes\(commit\)[\s\S]*!endingLanes\.includes\(lane\)/);
-  assert.match(gitGraphView, /function mergeCurvePath\(commit, lane\)[\s\S]*return `M \$\{fromX\} 12 C \$\{fromX\} 17 \$\{toX\} 17 \$\{toX\} \$\{graphRowHeight \+ 1\}`;/);
-  assert.match(gitGraphView, /function splitCurvePath\(commit, lane\)[\s\S]*return `M \$\{fromX\} -1 C \$\{fromX\} 7 \$\{toX\} 7 \$\{toX\} 12`;/);
+  assert.match(gitGraphView, /function graphVerticalLanes\(commit\)[\s\S]*const joiningLanes = Array\.isArray\(commit\.mergeJoinLanes\)/);
+  assert.match(gitGraphView, /function graphVerticalLanes\(commit\)[\s\S]*!endingLanes\.includes\(lane\) && !joiningLanes\.includes\(lane\)/);
+  assert.match(gitGraphView, /function mergeCurvePath\(commit, lane\)[\s\S]*return `M \$\{fromX\} 12 C \$\{fromX\} 17 \$\{toX\} 17 \$\{toX\} \$\{graphRowHeight\}`;/);
+  assert.match(gitGraphView, /function splitCurvePath\(commit, lane\)[\s\S]*return `M \$\{fromX\} 0 C \$\{fromX\} 7 \$\{toX\} 7 \$\{toX\} 12`;/);
   assert.match(gitGraphView, /watch\(\s*graphRows/);
   assert.match(gitGraphView, /selectCommit\(rows\[0\]\.hash, \{ force: true \}\)/);
   assert.match(gitGraphView, /function authorInitial/);

@@ -124,7 +124,7 @@ async function request(path, options = {}) {
     throw new Error(text || `服务器返回了非 JSON 响应 (HTTP ${response.status})`);
   }
   if (!response.ok || !data.ok) {
-    const error = new Error(data.error || `HTTP ${response.status}`);
+    const error = new Error(data.error || data.message || data.reason || `HTTP ${response.status}`);
     error.data = data;
     error.status = response.status;
     throw error;

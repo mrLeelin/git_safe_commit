@@ -140,12 +140,12 @@
 .commit-lanes {
   position: relative;
   height: 24px;
-  overflow: visible;
+  overflow: hidden;
 }
 .graph-svg {
   display: block;
   height: 24px;
-  overflow: visible;
+  overflow: hidden;
 }
 .graph-path {
   fill: none;
