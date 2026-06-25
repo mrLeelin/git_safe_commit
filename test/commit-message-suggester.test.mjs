@@ -58,6 +58,35 @@ test("suggestCommitMessage returns a structured error when selected AI is unavai
   );
 });
 
+test("suggestCommitMessage reports git diff failures instead of returning an empty message", async () => {
+  await assert.rejects(
+    suggestCommitMessage({
+      config: { repoPath: "C:\\not-a-repo", ai: { selected: "codex" } },
+      paths: ["src/App.vue"],
+      detectInstalledAi: () => [{ id: "codex", label: "Codex", command: "codex", source: "codex" }],
+      runGit: async () => ({
+        ok: false,
+        stdout: "",
+        stderr: "fatal: not a git repository",
+        error: ""
+      })
+    }),
+    /读取选中文件 diff 失败：fatal: not a git repository/
+  );
+});
+
+test("suggestCommitMessage reports selected paths without diff", async () => {
+  await assert.rejects(
+    suggestCommitMessage({
+      config: { repoPath: "C:\\repo", ai: { selected: "codex" } },
+      paths: ["src/App.vue"],
+      detectInstalledAi: () => [{ id: "codex", label: "Codex", command: "codex", source: "codex" }],
+      runGit: async () => ({ ok: true, stdout: "", stderr: "" })
+    }),
+    /选中的文件没有可用于生成提交说明的变更/
+  );
+});
+
 test("suggestCommitMessage uses the Windows cmd shim for Codex extensionless npm shims", async () => {
   const commands = [];
   const result = await suggestCommitMessage({
