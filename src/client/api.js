@@ -24,6 +24,10 @@ export async function loadCommitDetail(hash) {
   return request(`/api/git/commit/${encodeURIComponent(hash)}`);
 }
 
+export async function loadRepoFileDiff(payload = {}) {
+  return request("/api/git/file-diff", { method: "POST", body: JSON.stringify(payload) });
+}
+
 export async function runAction(action, payload = {}) {
   return request(`/api/action/${action}`, { method: "POST", body: JSON.stringify(payload) });
 }

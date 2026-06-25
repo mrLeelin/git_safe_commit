@@ -162,6 +162,27 @@ test("server exposes health, config, and inspect action", async () => {
     assert.equal(inspect.ok, true);
     assert.equal(inspect.summary.branch, "main");
 
+    await writeFile(path.join(repo, "tracked.txt"), "one\ntwo\n", "utf8");
+    const fileDiffResponse = await fetch(`${baseUrl}/api/git/file-diff`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "tracked.txt", sectionId: "unstaged" })
+    });
+    const fileDiff = await fileDiffResponse.json();
+    assert.equal(fileDiff.ok, true);
+    assert.equal(fileDiff.path, "tracked.txt");
+    assert.equal(fileDiff.sectionId, "unstaged");
+    assert.match(fileDiff.command, /git diff -- tracked\.txt/);
+    assert.match(fileDiff.diff, /\+two/);
+
+    const fileDiffViewResponse = await fetch(`${baseUrl}/git/file-diff-view?path=${encodeURIComponent("tracked.txt")}&sectionId=unstaged`);
+    const fileDiffView = await fileDiffViewResponse.text();
+    assert.equal(fileDiffViewResponse.status, 200);
+    assert.match(fileDiffViewResponse.headers.get("content-type") || "", /text\/html/);
+    assert.match(fileDiffView, /tracked\.txt/);
+    assert.match(fileDiffView, /diff --git/);
+    assert.match(fileDiffView, /\+two/);
+
     const graphResponse = await fetch(`${baseUrl}/api/git/graph`);
     const graph = await graphResponse.json();
     assert.equal(graph.ok, true);

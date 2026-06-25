@@ -19,7 +19,7 @@ import {
   writeTextCandidate
 } from "./lib/conflict-workbench.mjs";
 import { pickFolder } from "./lib/folder-picker.mjs";
-import { pathInsideRepo } from "./lib/git-executor.mjs";
+import { pathInsideRepo, runGit } from "./lib/git-executor.mjs";
 import { getGitGraph, getCommitDetail } from "./lib/git-graph.mjs";
 import { createWorkflowRunner } from "./lib/workflow-runner.mjs";
 
@@ -104,6 +104,19 @@ app.get("/api/git/commit/:hash", async (req, res, next) => {
   try {
     const detail = await getCommitDetail(config.repoPath, req.params.hash);
     res.json(detail);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/git/file-diff", async (req, res, next) => {
+  try {
+    const diff = await loadFileDiff({
+      repoPath: config.repoPath,
+      filePath: req.body.path,
+      sectionId: req.body.sectionId
+    });
+    res.json({ ok: true, ...diff });
   } catch (error) {
     next(error);
   }
@@ -229,6 +242,19 @@ app.post("/api/action/:action", async (req, res, next) => {
   }
 });
 
+app.get("/git/file-diff-view", async (req, res, next) => {
+  try {
+    const diff = await loadFileDiff({
+      repoPath: config.repoPath,
+      filePath: req.query.path,
+      sectionId: req.query.sectionId
+    });
+    res.type("html").send(renderDiffHtml(diff));
+  } catch (error) {
+    next(error);
+  }
+});
+
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(toolRoot, "dist")));
   app.get(/.*/, (_req, res) => res.sendFile(path.join(toolRoot, "dist", "index.html")));
@@ -298,4 +324,99 @@ function openLocalFile(filePath) {
     windowsHide: true
   });
   child.unref();
+}
+
+async function loadFileDiff({ repoPath, filePath, sectionId }) {
+  const target = pathInsideRepo(repoPath, String(filePath || ""));
+  const normalizedSectionId = String(sectionId || "");
+  if (normalizedSectionId === "untracked") {
+    const content = await readFile(target.fullPath, "utf8");
+    return {
+      path: target.relative,
+      sectionId: normalizedSectionId,
+      command: "read untracked file",
+      diff: untrackedDiffPreview(target.relative, content)
+    };
+  }
+
+  const args = normalizedSectionId === "staged"
+    ? ["diff", "--cached", "--", target.relative]
+    : ["diff", "--", target.relative];
+  const diff = await runGit(repoPath, args);
+  if (!diff.ok) throw new Error(diff.stderr || diff.error || `git diff failed for ${target.relative}`);
+  return {
+    path: target.relative,
+    sectionId: normalizedSectionId,
+    command: diff.command,
+    diff: diff.stdout
+  };
+}
+
+function untrackedDiffPreview(relativePath, content) {
+  const lines = content.split(/\r?\n/);
+  const body = lines.map((line) => `+${line}`).join("\n");
+  return `diff --git a/${relativePath} b/${relativePath}\nnew file mode 100644\n--- /dev/null\n+++ b/${relativePath}\n${body}`;
+}
+
+function renderDiffHtml({ path: filePath, sectionId, command, diff }) {
+  const lines = String(diff || "").split(/\r?\n/);
+  const renderedLines = lines.map((line) => {
+    const kind = diffLineKind(line);
+    return `<div class="diff-line ${kind}"><span>${htmlEscape(line || " ")}</span></div>`;
+  }).join("");
+  const stateLabel = sectionId === "staged" ? "已暂存" : sectionId === "untracked" ? "未跟踪" : "未暂存";
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${htmlEscape(filePath)} - 文件变更</title>
+  <style>
+    :root { color-scheme: dark; --bg: #07111f; --panel: #0e1a2b; --line: #26374d; --ink: #e5edf7; --muted: #93a4b7; --blue: #67e8f9; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 "Microsoft YaHei", "Segoe UI", system-ui, sans-serif; }
+    main { min-height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+    header { position: sticky; top: 0; z-index: 1; display: grid; gap: 8px; padding: 16px 18px; border-bottom: 1px solid var(--line); background: rgba(7, 17, 31, .96); }
+    h1 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 12px; }
+    .pill { border: 1px solid rgba(103, 232, 249, .28); border-radius: 999px; padding: 3px 8px; color: var(--blue); }
+    .diff { overflow: auto; margin: 0; padding: 14px 0 24px; background: #0a1423; }
+    .diff-line { min-height: 19px; padding: 1px 18px; font: 12px/1.45 Consolas, "Cascadia Mono", "SFMono-Regular", monospace; white-space: pre; }
+    .diff-line.header, .diff-line.hunk { color: #93c5fd; background: rgba(37, 99, 235, .16); }
+    .diff-line.added { color: #bbf7d0; background: rgba(22, 101, 52, .42); }
+    .diff-line.removed { color: #fecaca; background: rgba(127, 29, 29, .42); }
+    .empty { margin: 18px; padding: 20px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>${htmlEscape(filePath)}</h1>
+      <div class="meta">
+        <span class="pill">${htmlEscape(stateLabel)}</span>
+        <span>${htmlEscape(command || "")}</span>
+      </div>
+    </header>
+    ${diff ? `<section class="diff" aria-label="${htmlEscape(filePath)} diff">${renderedLines}</section>` : `<div class="empty">这个路径当前没有可显示的 diff。</div>`}
+  </main>
+</body>
+</html>`;
+}
+
+function diffLineKind(line) {
+  if (line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("--- ") || line.startsWith("+++ ")) return "header";
+  if (line.startsWith("@@")) return "hunk";
+  if (line.startsWith("+")) return "added";
+  if (line.startsWith("-")) return "removed";
+  return "context";
+}
+
+function htmlEscape(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }

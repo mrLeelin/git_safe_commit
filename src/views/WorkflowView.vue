@@ -28,16 +28,21 @@ const props = defineProps({
   commitResetKey: { type: Number, default: 0 },
   operationNotice: { type: Object, default: null },
   readiness: { type: Object, required: true },
-  nextStep: { type: String, default: "" }
+  nextStep: { type: String, default: "" },
+  themeMode: { type: String, default: "light" }
 });
 
-const emit = defineEmits(["action", "commit", "load-text-conflict", "write-text-candidate", "load-table-conflict", "write-table-candidate", "load-binary-conflict", "write-binary-candidate", "apply-candidate", "open-repo-file", "export-binary-conflict", "candidate-created", "suggest-message", "blocked", "clear-operation-notice"]);
+const emit = defineEmits(["action", "commit", "load-text-conflict", "write-text-candidate", "load-table-conflict", "write-table-candidate", "load-binary-conflict", "write-binary-candidate", "apply-candidate", "open-repo-file", "load-file-diff", "export-binary-conflict", "candidate-created", "suggest-message", "blocked", "clear-operation-notice"]);
 
 const selectedPaths = ref([]);
 const commitMessage = ref("");
 const suggestingMessage = ref(false);
 const selectionQuery = ref("");
 const lastSelectedPath = ref("");
+const detailQueuePath = ref("");
+const fileDiffPreview = ref(null);
+const fileDiffLoading = ref(false);
+const fileDiffError = ref("");
 const confirmAction = ref(null);
 const activeConflictPath = ref("");
 const textConflict = ref(null);
@@ -64,6 +69,7 @@ const applyingCandidatePath = ref("");
 const tableSideScrollers = { ours: null, theirs: null };
 const tablePreviewScroller = ref(null);
 let syncingTableSideScroll = false;
+let fileDiffRequestId = 0;
 const workbenchActive = computed(() => Boolean(activeConflictPath.value));
 
 const selectedFileCount = computed(() => selectedPaths.value.length);
@@ -109,6 +115,16 @@ const visibleSelectableFiles = computed(() => {
   return props.selectableFiles.filter((file) => {
     return [file.path, file.group, file.status].some((value) => String(value || "").toLowerCase().includes(query));
   });
+});
+const detailQueueFile = computed(() => {
+  return props.selectableFiles.find((file) => file.path === detailQueuePath.value) || null;
+});
+const fileDiffLines = computed(() => {
+  return String(fileDiffPreview.value?.diff || "").split(/\r?\n/).map((text, index) => ({
+    id: `${index}:${text}`,
+    text,
+    kind: diffLineKind(text)
+  }));
 });
 const directoryOptions = computed(() => {
   const counts = new Map();
@@ -180,11 +196,13 @@ const pushBlockReason = computed(() => {
 watch(() => props.selectableFiles, (nextFiles) => {
   const allowed = new Set(nextFiles.map((file) => file.path));
   selectedPaths.value = selectedPaths.value.filter((path) => allowed.has(path));
+  if (detailQueuePath.value && !allowed.has(detailQueuePath.value)) closeFileDetailModal();
 }, { immediate: true });
 
 watch(() => props.commitResetKey, () => {
   commitMessage.value = "";
   selectedPaths.value = [];
+  clearFileDiffPreview();
 });
 
 function togglePath(path, event) {
@@ -196,6 +214,43 @@ function togglePath(path, event) {
       : [...selectedPaths.value, path];
   }
   lastSelectedPath.value = path;
+}
+
+function openFileDetailModal(file) {
+  detailQueuePath.value = file.path;
+  loadQueueFileDiff(file);
+}
+
+function loadQueueFileDiff(file) {
+  const requestId = ++fileDiffRequestId;
+  fileDiffPreview.value = null;
+  fileDiffError.value = "";
+  fileDiffLoading.value = true;
+  emit("load-file-diff", {
+    path: file.path,
+    sectionId: file.sectionId,
+    status: file.status
+  }, (result) => {
+    if (requestId !== fileDiffRequestId) return;
+    fileDiffLoading.value = false;
+    if (result?.ok) {
+      fileDiffPreview.value = result;
+    } else {
+      fileDiffError.value = result?.error || "读取文件变更失败";
+    }
+  });
+}
+
+function clearFileDiffPreview() {
+  fileDiffRequestId++;
+  fileDiffPreview.value = null;
+  fileDiffError.value = "";
+  fileDiffLoading.value = false;
+}
+
+function closeFileDetailModal() {
+  detailQueuePath.value = "";
+  clearFileDiffPreview();
 }
 
 function selectAll() {
@@ -253,6 +308,14 @@ function addPaths(paths) {
 function topDirectory(filePath) {
   const parts = String(filePath || "").split(/[\\/]/).filter(Boolean);
   return parts.length > 1 ? parts[0] : ".";
+}
+
+function diffLineKind(line) {
+  if (line.startsWith("+") && !line.startsWith("+++")) return "added";
+  if (line.startsWith("-") && !line.startsWith("---")) return "removed";
+  if (line.startsWith("@@")) return "hunk";
+  if (line.startsWith("diff --git")) return "header";
+  return "context";
 }
 
 async function runCommit() {
@@ -1084,17 +1147,26 @@ async function ensureCommitMessage({ force = false } = {}) {
       </div>
 
       <div class="queue-list">
-        <button
+        <div
           v-for="file in visibleSelectableFiles"
           :key="`${file.group}:${file.path}`"
           class="queue-row"
           :class="{ selected: selectedPaths.includes(file.path) }"
-          type="button"
+          role="button"
+          tabindex="0"
           @click="togglePath(file.path, $event)"
+          @keydown.enter.prevent="togglePath(file.path, $event)"
+          @keydown.space.prevent="togglePath(file.path, $event)"
         >
           <span class="checkmark" aria-hidden="true"></span>
           <span class="file-meta"><strong>{{ file.path }}</strong><small>{{ file.group }} · {{ file.status }}</small></span>
-        </button>
+          <button
+            class="text-button file-detail-trigger"
+            type="button"
+            :aria-label="`查看 ${file.path} 详细信息`"
+            @click.stop="openFileDetailModal(file)"
+          >详情</button>
+        </div>
         <div v-if="!selectableFiles.length" class="empty-state">{{ labels.fileHint }}</div>
       </div>
 
@@ -1156,6 +1228,35 @@ async function ensureCommitMessage({ force = false } = {}) {
       </div>
     </aside>
   </section>
+
+  <teleport to="body">
+    <div v-if="detailQueueFile" class="file-detail-backdrop" :class="`theme-${themeMode}`" @click="closeFileDetailModal">
+      <section class="file-detail-dialog" role="dialog" aria-modal="true" :aria-label="`${detailQueueFile.path} 详细信息`" @click.stop>
+        <div class="panel-head compact-head">
+          <div>
+            <h3>文件详细信息</h3>
+            <p class="muted">{{ detailQueueFile.group }} · {{ detailQueueFile.status }} · {{ topDirectory(detailQueueFile.path) }}</p>
+          </div>
+          <button class="text-button" type="button" @click="closeFileDetailModal">关闭</button>
+        </div>
+        <div class="file-preview-meta">
+          <code>{{ detailQueueFile.path }}</code>
+          <span>{{ selectedPaths.includes(detailQueueFile.path) ? '已加入提交队列' : '未加入提交队列' }}</span>
+        </div>
+        <div v-if="fileDiffError" class="file-diff-empty">{{ fileDiffError }}</div>
+        <div v-else-if="fileDiffLoading" class="file-diff-empty">正在读取文件变更...</div>
+        <div v-else-if="fileDiffPreview?.diff" class="file-diff-view" :aria-label="`${detailQueueFile.path} diff`">
+          <pre
+            v-for="line in fileDiffLines"
+            :key="line.id"
+            class="file-diff-line"
+            :class="line.kind"
+          >{{ line.text || ' ' }}</pre>
+        </div>
+        <div v-else class="file-diff-empty">这个路径当前没有可显示的 diff。</div>
+      </section>
+    </div>
+  </teleport>
 
   <section class="panel">
     <div class="panel-head compact-head"><h3>{{ labels.status }}</h3><span class="muted">{{ changedCount }} 个改动项</span></div>

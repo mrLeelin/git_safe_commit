@@ -8,6 +8,7 @@ import {
   loadBinaryConflict as loadBinaryConflictApi,
   loadGraph as loadGraphApi,
   loadHealth,
+  loadRepoFileDiff as loadRepoFileDiffApi,
   loadState,
   openEvents as openEventStream,
   exportBinaryConflict as exportBinaryConflictApi,
@@ -476,6 +477,15 @@ async function openRepoFile(payload, done) {
   }
 }
 
+async function loadRepoFileDiff(payload, done) {
+  try {
+    done(await loadRepoFileDiffApi(payload));
+  } catch (error) {
+    view.details = `读取文件变更失败: ${error.message}`;
+    done({ ok: false, error: error.message });
+  }
+}
+
 async function exportBinaryConflict(payload, done) {
   try {
     done(await exportBinaryConflictApi(payload));
@@ -607,6 +617,7 @@ function publicPayload(payload) {
           :operation-notice="operationNotice"
           :readiness="readiness"
           :next-step="nextStep"
+          :theme-mode="themeMode"
           @action="runAction"
           @clear-operation-notice="clearOperationNotice"
           @commit="runCommit"
@@ -618,6 +629,7 @@ function publicPayload(payload) {
           @write-binary-candidate="writeBinaryCandidate"
           @apply-candidate="applyConflictCandidate"
           @open-repo-file="openRepoFile"
+          @load-file-diff="loadRepoFileDiff"
           @export-binary-conflict="exportBinaryConflict"
           @candidate-created="rememberConflictCandidate"
           @suggest-message="suggestCommitMessage"
