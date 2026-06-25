@@ -677,6 +677,49 @@ test("workflow runner blocks AI push when remote advanced before the AI tool pus
   );
 });
 
+test("workflow runner blocks AI git_rebase when dirty worktree needs safe sync stash", async () => {
+  const repo = await createRepo("gsc-ai-rebase-dirty-runner-");
+  const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-ai-rebase-dirty-remote-"));
+  const other = await mkdtemp(path.join(os.tmpdir(), "gsc-ai-rebase-dirty-other-"));
+  git(remote, ["init", "--bare", "-b", "main"]);
+  git(repo, ["remote", "add", "origin", remote]);
+  git(repo, ["push", "-u", "origin", "main"]);
+  git(other, ["clone", remote, "."]);
+  git(other, ["config", "user.email", "remote@example.test"]);
+  git(other, ["config", "user.name", "Remote Test"]);
+  await writeFile(path.join(repo, "local.txt"), "local\n", "utf8");
+  git(repo, ["add", "local.txt"]);
+  git(repo, ["commit", "-m", "local change"]);
+  await writeFile(path.join(other, "remote.txt"), "remote\n", "utf8");
+  git(other, ["add", "remote.txt"]);
+  git(other, ["commit", "-m", "remote change"]);
+  git(other, ["push"]);
+  await writeFile(path.join(repo, "tracked.txt"), "dirty\n", "utf8");
+
+  const cliOutputs = [
+    JSON.stringify({ tool: "create_recovery", args: {} }),
+    JSON.stringify({ tool: "git_rebase", args: { onto: "@{u}" } })
+  ];
+  let callIndex = 0;
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: { selected: "claude" }
+    },
+    runProcess: async () => ({
+      ok: true, code: 0, stdout: cliOutputs[callIndex++] || "", stderr: "", command: "claude --print"
+    })
+  });
+
+  await assert.rejects(
+    () => runner.run("ai-push", { confirmed: true }),
+    /Use the built-in sync_remote path/
+  );
+  await assert.rejects(() => access(path.join(repo, ".git", "rebase-merge")));
+  await assert.rejects(() => access(path.join(repo, ".git", "rebase-apply")));
+});
+
 test("workflow runner uses the UI commit message even when AI tool args differ", async () => {
   const repo = await createRepo();
   await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
