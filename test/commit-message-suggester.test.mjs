@@ -19,6 +19,7 @@ test("suggestCommitMessage uses the selected installed AI CLI instead of remote 
     runGit: async (_repoPath, args) => {
       if (args[0] === "diff" && args[1] === "--cached") return { stdout: "" };
       if (args[0] === "diff") return { stdout: "diff --git a/src/App.vue b/src/App.vue\n+fix ui\n" };
+      if (args[0] === "ls-files") return { stdout: "" };
       throw new Error(`unexpected git args: ${args.join(" ")}`);
     },
     runProcess: async (file, args, options) => {
@@ -87,6 +88,36 @@ test("suggestCommitMessage reports selected paths without diff", async () => {
   );
 });
 
+test("suggestCommitMessage includes selected untracked files in the AI diff", async () => {
+  const commands = [];
+  const result = await suggestCommitMessage({
+    config: { repoPath: "C:\\repo", ai: { selected: "codex" } },
+    paths: ["docs/new-note.md"],
+    detectInstalledAi: () => [{ id: "codex", label: "Codex", command: "codex", source: "codex" }],
+    runGit: async (_repoPath, args) => {
+      if (args[0] === "diff") return { stdout: "" };
+      if (args[0] === "ls-files") return { stdout: "docs/new-note.md\n" };
+      throw new Error(`unexpected git args: ${args.join(" ")}`);
+    },
+    readFile: async (filePath, encoding) => {
+      assert.equal(filePath, "C:\\repo\\docs\\new-note.md");
+      assert.equal(encoding, "utf8");
+      return "new note\nsecond line";
+    },
+    runProcess: async (file, args, options) => {
+      commands.push({ file, args, options });
+      return { ok: true, stdout: "[Docs] -- add new note\n", stderr: "" };
+    }
+  });
+
+  assert.equal(result.message, "[Docs] -- add new note");
+  assert.match(commands[0].options.input, /--- untracked ---/);
+  assert.match(commands[0].options.input, /diff --git a\/docs\/new-note\.md b\/docs\/new-note\.md/);
+  assert.match(commands[0].options.input, /new file mode 100644/);
+  assert.match(commands[0].options.input, /\+new note/);
+  assert.match(commands[0].options.input, /\+second line/);
+});
+
 test("suggestCommitMessage uses the Windows cmd shim for Codex extensionless npm shims", async () => {
   const commands = [];
   const result = await suggestCommitMessage({
@@ -101,6 +132,7 @@ test("suggestCommitMessage uses the Windows cmd shim for Codex extensionless npm
     runGit: async (_repoPath, args) => {
       if (args[0] === "diff" && args[1] === "--cached") return { stdout: "" };
       if (args[0] === "diff") return { stdout: "diff --git a/src/App.vue b/src/App.vue\n+fix ui\n" };
+      if (args[0] === "ls-files") return { stdout: "" };
       throw new Error(`unexpected git args: ${args.join(" ")}`);
     },
     runProcess: async (file, args, options) => {
@@ -136,6 +168,7 @@ test("suggestCommitMessage trims failed AI output before returning an error", as
       runGit: async (_repoPath, args) => {
         if (args[0] === "diff" && args[1] === "--cached") return { stdout: "" };
         if (args[0] === "diff") return { stdout: "diff --git a/src/App.vue b/src/App.vue\n+fix ui\n" };
+        if (args[0] === "ls-files") return { stdout: "" };
         throw new Error(`unexpected git args: ${args.join(" ")}`);
       },
       runProcess: async () => ({
@@ -163,6 +196,7 @@ test("suggestCommitMessage accepts stdout when Codex produces a message before t
     runGit: async (_repoPath, args) => {
       if (args[0] === "diff" && args[1] === "--cached") return { stdout: "" };
       if (args[0] === "diff") return { stdout: "diff --git a/src/App.vue b/src/App.vue\n+fix ui\n" };
+      if (args[0] === "ls-files") return { stdout: "" };
       throw new Error(`unexpected git args: ${args.join(" ")}`);
     },
     runProcess: async () => ({
@@ -190,6 +224,7 @@ test("suggestCommitMessage preserves tagged multiline commit messages from noisy
     runGit: async (_repoPath, args) => {
       if (args[0] === "diff" && args[1] === "--cached") return { stdout: "" };
       if (args[0] === "diff") return { stdout: "diff --git a/src/App.vue b/src/App.vue\n-同步远端\n+拉取远端\n" };
+      if (args[0] === "ls-files") return { stdout: "" };
       throw new Error(`unexpected git args: ${args.join(" ")}`);
     },
     runProcess: async () => ({
@@ -219,6 +254,7 @@ test("suggestCommitMessage aligns continuation markers with each tagged line", a
     runGit: async (_repoPath, args) => {
       if (args[0] === "diff" && args[1] === "--cached") return { stdout: "" };
       if (args[0] === "diff") return { stdout: "diff --git a/src/App.vue b/src/App.vue\n+fetch button\n" };
+      if (args[0] === "ls-files") return { stdout: "" };
       throw new Error(`unexpected git args: ${args.join(" ")}`);
     },
     runProcess: async () => ({
