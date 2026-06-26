@@ -45,6 +45,24 @@ async function createConflictRepo() {
   return repo;
 }
 
+async function createPrefabConflictRepo() {
+  const repo = await mkdtemp(path.join(os.tmpdir(), "gsc-prefab-conflict-workbench-"));
+  git(repo, ["init", "-b", "main"]);
+  git(repo, ["config", "user.email", "tool@example.test"]);
+  git(repo, ["config", "user.name", "Tool Test"]);
+  await writeFile(path.join(repo, "Example.prefab"), "%YAML 1.1\n--- !u!1 &1000\nGameObject:\n  m_Name: Base\n", "utf8");
+  git(repo, ["add", "."]);
+  git(repo, ["commit", "-m", "initial"]);
+  git(repo, ["switch", "-c", "feature"]);
+  await writeFile(path.join(repo, "Example.prefab"), "%YAML 1.1\n--- !u!1 &1000\nGameObject:\n  m_Name: Feature\n", "utf8");
+  git(repo, ["commit", "-am", "feature edit"]);
+  git(repo, ["switch", "main"]);
+  await writeFile(path.join(repo, "Example.prefab"), "%YAML 1.1\n--- !u!1 &1000\nGameObject:\n  m_Name: Main\n", "utf8");
+  git(repo, ["commit", "-am", "main edit"]);
+  assert.throws(() => git(repo, ["merge", "feature"]));
+  return repo;
+}
+
 async function createSpreadsheetConflictRepo() {
   const repo = await mkdtemp(path.join(os.tmpdir(), "gsc-xlsx-conflict-workbench-"));
   git(repo, ["init", "-b", "main"]);
@@ -218,6 +236,28 @@ test("text conflict workbench loads stages and writes a candidate without stagin
   assert.equal(choices.source, "line");
   assert.deepEqual(choices.lineChoices, [{ row: 1, choice: "both" }]);
   assert.match(git(repo, ["status", "--short"]), /^UU tracked\.js/m);
+});
+
+test("text conflict workbench supports Unity prefab YAML conflicts", async () => {
+  const repo = await createPrefabConflictRepo();
+
+  const loaded = await loadTextConflict({ repoPath: repo, filePath: "Example.prefab" });
+  const candidate = await writeTextCandidate({
+    repoPath: repo,
+    filePath: "Example.prefab",
+    content: "%YAML 1.1\n--- !u!1 &1000\nGameObject:\n  m_Name: Resolved\n",
+    source: "line",
+    lineChoices: [{ row: 4, choice: "ours" }]
+  });
+
+  assert.equal(loaded.ok, true);
+  assert.match(loaded.textConflict.base.content, /m_Name: Base/);
+  assert.match(loaded.textConflict.ours.content, /m_Name: Main/);
+  assert.match(loaded.textConflict.theirs.content, /m_Name: Feature/);
+  assert.equal(candidate.ok, true);
+  assert.match(candidate.textCandidate.candidate, /\.git\/git-safe-commit-backups\/.+\/text-merge-candidates\/Example\.merged\..+\.prefab/);
+  assert.equal(await readFile(path.join(repo, candidate.textCandidate.candidate), "utf8"), "%YAML 1.1\n--- !u!1 &1000\nGameObject:\n  m_Name: Resolved\n");
+  assert.match(git(repo, ["status", "--short"]), /^UU Example\.prefab/m);
 });
 
 test("conflict workbench applies a generated candidate back to the conflict file and stages it", async () => {

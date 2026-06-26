@@ -70,6 +70,7 @@ const tableSideScrollers = { ours: null, theirs: null };
 const tablePreviewScroller = ref(null);
 let syncingTableSideScroll = false;
 let fileDiffRequestId = 0;
+let textCandidateRefreshFrame = 0;
 const workbenchActive = computed(() => Boolean(activeConflictPath.value));
 
 const selectedFileCount = computed(() => selectedPaths.value.length);
@@ -157,6 +158,13 @@ const tableConflictItems = computed(() => {
 });
 const selectedTableConflict = computed(() => {
   return tableConflictItems.value.find((cell) => cell.id === selectedTableCellId.value) || tableConflictItems.value[0] || null;
+});
+const textChangedLineRows = computed(() => {
+  return textLineRows.value.filter((row) => row.kind === "changed");
+});
+const isLargeTextCandidate = computed(() => isLargeHighlightedContent(textCandidate.value));
+const highlightedTextCandidate = computed(() => {
+  return isLargeTextCandidate.value ? "" : highlightedCode(textCandidate.value);
 });
 const activeTableSheet = computed(() => {
   return tableSheets.value.find((sheet) => sheet.name === activeTableSheetName.value) || tableSheets.value[0] || null;
@@ -477,7 +485,7 @@ function conflictRowClass(file) {
 }
 
 function isTextConflict(file) {
-  return /\.(cs|asmdef|asmref|js|ts|tsx|mjs|cjs|py|ps1|sh|bat|cmd|java|kt|cpp|h|hpp|c|go|rs|md|txt|json|jsonc|xml|ya?ml|toml|ini|editorconfig|gitignore|gitattributes|shader|hlsl|cginc|compute|uss|uxml)$/i.test(file.path);
+  return /\.(cs|asmdef|asmref|js|ts|tsx|mjs|cjs|py|ps1|sh|bat|cmd|java|kt|cpp|h|hpp|c|go|rs|md|txt|json|jsonc|xml|ya?ml|toml|ini|editorconfig|gitignore|gitattributes|shader|hlsl|cginc|compute|uss|uxml|unity|prefab|asset|meta|mat|anim|controller|overridecontroller|playable|mask|physicmaterial|physicsmaterial2d)$/i.test(file.path);
 }
 
 function isTableConflict(file) {
@@ -578,10 +586,11 @@ async function openBinaryWorkbench(path) {
 
 async function saveTextCandidate() {
   if (!textConflict.value) return;
+  const content = currentTextCandidateContent();
   const result = await new Promise((resolve) => {
     emit("write-text-candidate", {
       path: textConflict.value.path,
-      content: textCandidate.value,
+      content,
       source: textDraftSource.value,
       lineChoices: lineChoiceSummary(textLineRows.value)
     }, resolve);
@@ -610,7 +619,7 @@ function setLineChoice(rowId, choice) {
   if (!row || row.kind !== "changed") return;
   row.choice = choice;
   textDraftSource.value = "line";
-  textCandidate.value = composeLineDraft(textLineRows.value);
+  scheduleTextCandidateRefresh();
 }
 
 function setAllLineChoices(choice) {
@@ -619,7 +628,40 @@ function setAllLineChoices(choice) {
     if (row.kind === "changed") row.choice = choice;
   }
   textDraftSource.value = "line";
-  textCandidate.value = composeLineDraft(textLineRows.value);
+  scheduleTextCandidateRefresh();
+}
+
+function currentTextCandidateContent() {
+  if (textDraftSource.value !== "line") return textCandidate.value;
+  cancelTextCandidateRefresh();
+  const content = composeLineDraft(textLineRows.value);
+  textCandidate.value = content;
+  return content;
+}
+
+function scheduleTextCandidateRefresh() {
+  cancelTextCandidateRefresh();
+  const refresh = () => {
+    textCandidateRefreshFrame = 0;
+    if (textDraftSource.value === "line") {
+      textCandidate.value = composeLineDraft(textLineRows.value);
+    }
+  };
+  if (typeof requestAnimationFrame === "function") {
+    textCandidateRefreshFrame = requestAnimationFrame(refresh);
+  } else {
+    textCandidateRefreshFrame = setTimeout(refresh, 0);
+  }
+}
+
+function cancelTextCandidateRefresh() {
+  if (!textCandidateRefreshFrame) return;
+  if (typeof cancelAnimationFrame === "function") {
+    cancelAnimationFrame(textCandidateRefreshFrame);
+  } else {
+    clearTimeout(textCandidateRefreshFrame);
+  }
+  textCandidateRefreshFrame = 0;
 }
 
 function syncCandidateHighlightScroll(event) {
@@ -979,6 +1021,17 @@ function highlightedCode(content) {
     .join("\n");
 }
 
+function isLargeHighlightedContent(content) {
+  const text = String(content || "");
+  if (text.length > 50000) return true;
+  let lineCount = 1;
+  for (let index = 0; index < text.length; index++) {
+    if (text.charCodeAt(index) === 10) lineCount++;
+    if (lineCount > 500) return true;
+  }
+  return false;
+}
+
 function highlightCodeLine(line) {
   const escaped = escapeHtml(line);
   if (/^(&lt;&lt;&lt;&lt;&lt;&lt;&lt;.*|=======|&gt;&gt;&gt;&gt;&gt;&gt;&gt;.*)$/.test(escaped)) {
@@ -1330,8 +1383,8 @@ async function ensureCommitMessage({ force = false } = {}) {
             </div>
             <span class="source-pill">{{ sourceLabel(textDraftSource) }}</span>
           </div>
-          <div class="code-editor-shell">
-            <pre ref="candidateHighlight" class="code-highlight candidate-highlight" v-html="highlightedCode(textCandidate)"></pre>
+          <div class="code-editor-shell" :class="{ 'no-highlight': isLargeTextCandidate }">
+            <pre v-if="!isLargeTextCandidate" ref="candidateHighlight" class="code-highlight candidate-highlight" v-html="highlightedTextCandidate"></pre>
             <textarea v-model="textCandidate" spellcheck="false" rows="18" wrap="off" @input="textDraftSource = 'edited'" @scroll="syncCandidateHighlightScroll"></textarea>
           </div>
         </div>
@@ -1348,7 +1401,7 @@ async function ensureCommitMessage({ force = false } = {}) {
           <div class="text-line-toolbar">
             <div>
               <strong>按行对比：OURS -> THEIRS</strong>
-              <span>{{ textLineRows.length }} 行；冲突行可以逐行选择。</span>
+              <span>{{ textChangedLineRows.length }} / {{ textLineRows.length }} 行有差异；只显示需要选择的行。</span>
             </div>
             <div class="toolbar">
               <button class="mini-btn text-choice-btn ours" type="button" @click="setAllLineChoices('ours')">全部 OURS</button>
@@ -1370,22 +1423,22 @@ async function ensureCommitMessage({ force = false } = {}) {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in textLineRows" :key="row.id" :class="row.kind === 'changed' ? ['line-changed', `choice-${row.choice}`] : 'line-same'">
+                <tr v-for="row in textChangedLineRows" :key="row.id" :class="['line-changed', `choice-${row.choice}`]">
                   <td class="line-number">{{ row.oursLineNumber }}</td>
-                  <td :class="{ 'line-ours-cell': row.kind === 'changed' }"><pre class="line-cell">{{ row.ours }}</pre></td>
+                  <td class="line-ours-cell"><pre class="line-cell">{{ row.ours }}</pre></td>
                   <td class="line-number">{{ row.theirsLineNumber }}</td>
-                  <td :class="{ 'line-theirs-cell': row.kind === 'changed' }"><pre class="line-cell">{{ row.theirs }}</pre></td>
+                  <td class="line-theirs-cell"><pre class="line-cell">{{ row.theirs }}</pre></td>
                   <td class="line-choice">
-                    <template v-if="row.kind === 'changed'">
-                      <span class="text-conflict-label">冲突</span>
-                      <span class="choice-current"><span class="choice-state-dot" :class="row.choice"></span>当前 {{ row.choice.toUpperCase() }}</span>
-                      <button class="mini-btn text-choice-btn ours" :class="{ active: row.choice === 'ours' }" :aria-pressed="row.choice === 'ours'" type="button" @click="setLineChoice(row.id, 'ours')">OURS</button>
-                      <button class="mini-btn text-choice-btn theirs" :class="{ active: row.choice === 'theirs' }" :aria-pressed="row.choice === 'theirs'" type="button" @click="setLineChoice(row.id, 'theirs')">THEIRS</button>
-                      <button class="mini-btn text-choice-btn both" :class="{ active: row.choice === 'both' }" :aria-pressed="row.choice === 'both'" type="button" @click="setLineChoice(row.id, 'both')">BOTH</button>
-                      <button class="mini-btn text-choice-btn none" :class="{ active: row.choice === 'none' }" :aria-pressed="row.choice === 'none'" type="button" @click="setLineChoice(row.id, 'none')">NONE</button>
-                    </template>
-                    <span v-else class="muted">same</span>
+                    <span class="text-conflict-label">冲突</span>
+                    <span class="choice-current" :class="`current-${row.choice}`"><span class="choice-state-dot" :class="row.choice"></span>当前 {{ row.choice.toUpperCase() }}</span>
+                    <button class="mini-btn text-choice-btn ours" :class="{ active: row.choice === 'ours' }" :aria-pressed="row.choice === 'ours'" type="button" @click="setLineChoice(row.id, 'ours')">OURS</button>
+                    <button class="mini-btn text-choice-btn theirs" :class="{ active: row.choice === 'theirs' }" :aria-pressed="row.choice === 'theirs'" type="button" @click="setLineChoice(row.id, 'theirs')">THEIRS</button>
+                    <button class="mini-btn text-choice-btn both" :class="{ active: row.choice === 'both' }" :aria-pressed="row.choice === 'both'" type="button" @click="setLineChoice(row.id, 'both')">BOTH</button>
+                    <button class="mini-btn text-choice-btn none" :class="{ active: row.choice === 'none' }" :aria-pressed="row.choice === 'none'" type="button" @click="setLineChoice(row.id, 'none')">NONE</button>
                   </td>
+                </tr>
+                <tr v-if="!textChangedLineRows.length" class="line-same">
+                  <td class="line-choice" colspan="5">OURS 和 THEIRS 没有差异行。</td>
                 </tr>
               </tbody>
             </table>

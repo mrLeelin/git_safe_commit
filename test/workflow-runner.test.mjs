@@ -545,6 +545,63 @@ test("workflow runner cleans pending sync recovery and stash after resolved reba
   assert.equal(git(repo, ["rev-parse", "HEAD"]).trim(), git(repo, ["rev-parse", "@{u}"]).trim());
 });
 
+test("workflow runner restores and drops pending sync stash after a runner restart", async () => {
+  const repo = await createRepo("gsc-rebase-restart-runner-");
+  const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-rebase-restart-remote-"));
+  const other = await mkdtemp(path.join(os.tmpdir(), "gsc-rebase-restart-other-"));
+  git(remote, ["init", "--bare", "-b", "main"]);
+  git(repo, ["remote", "add", "origin", remote]);
+  git(repo, ["push", "-u", "origin", "main"]);
+  git(other, ["clone", remote, "."]);
+  git(other, ["config", "user.email", "remote@example.test"]);
+  git(other, ["config", "user.name", "Remote Test"]);
+
+  await writeFile(path.join(repo, "tracked.txt"), "local\n", "utf8");
+  git(repo, ["commit", "-am", "local change"]);
+  await writeFile(path.join(other, "tracked.txt"), "remote\n", "utf8");
+  git(other, ["commit", "-am", "remote change"]);
+  git(other, ["push"]);
+  await writeFile(path.join(repo, "scratch.txt"), "scratch\n", "utf8");
+
+  const firstRunner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  const sync = await firstRunner.run("sync", {});
+
+  assert.equal(sync.ok, false);
+  assert.equal(sync.blocked, true);
+  assert.ok(sync.syncStash.sha);
+  assert.notEqual(git(repo, ["stash", "list"]).trim(), "");
+  assert.equal(await access(path.join(repo, sync.recovery.backupDir, "sync-stash.json")).then(() => true), true);
+
+  await writeFile(path.join(repo, "tracked.txt"), "local\n", "utf8");
+  git(repo, ["add", "tracked.txt"]);
+
+  const restartedRunner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+  const result = await restartedRunner.run("continue-rebase-and-push", { confirmed: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.syncStash.sha, sync.syncStash.sha);
+  assert.equal(result.syncStash.apply.ok, true);
+  assert.equal(result.syncStash.drop.ok, true);
+  assert.equal(normalizeNewlines(await readFile(path.join(repo, "scratch.txt"), "utf8")), "scratch\n");
+  assert.equal(git(repo, ["stash", "list"]).trim(), "");
+  assert.equal(git(repo, ["branch", "--list", sync.recovery.backupBranch]).trim(), "");
+  await assert.rejects(access(path.join(repo, sync.recovery.backupDir)));
+  assert.equal(git(repo, ["rev-parse", "HEAD"]).trim(), git(repo, ["rev-parse", "@{u}"]).trim());
+});
+
 test("workflow runner refuses continue-and-push outside an active rebase", async () => {
   const repo = await createRepo("gsc-no-rebase-runner-");
   await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");

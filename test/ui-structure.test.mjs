@@ -227,6 +227,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /function openTextWorkbench\(path\)/);
   assert.match(workflowView, /function openTableWorkbench\(path\)/);
   assert.match(workflowView, /function openBinaryWorkbench\(path\)/);
+  assert.match(workflowView, /prefab\|asset\|meta/);
   assert.match(workflowView, /csv\|tsv\|xlsx/);
   assert.match(app, /"sync"/);
   assert.match(app, /loadConfigAndState\(\), loadGraph\(\)/);
@@ -248,6 +249,12 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /候选已生成/);
   assert.match(workflowView, /待生成候选/);
   assert.match(workflowView, /function highlightedCode\(content\)/);
+  assert.match(workflowView, /isLargeTextCandidate/);
+  assert.match(workflowView, /highlightedTextCandidate/);
+  assert.match(workflowView, /function isLargeHighlightedContent\(content\)/);
+  assert.match(workflowView, /function scheduleTextCandidateRefresh\(\)/);
+  assert.match(workflowView, /function currentTextCandidateContent\(\)/);
+  assert.match(workflowView, /content,\s*source: textDraftSource\.value/);
   assert.match(workflowView, /function protectFieldDeclarations\(content, tokens\)/);
   assert.match(workflowView, /function protectVariableNames\(content, tokens\)/);
   assert.match(workflowView, /typeof maybeName === "string"/);
@@ -266,6 +273,9 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(css, /\.table-alignment-panel/);
   assert.match(css, /\.theme-light \.table-alignment-panel/);
   assert.match(workflowView, /buildLineMergeRows/);
+  assert.match(workflowView, /textChangedLineRows/);
+  assert.match(workflowView, /v-for="row in textChangedLineRows"/);
+  assert.doesNotMatch(workflowView, /v-for="row in textLineRows"/);
   assert.match(workflowView, /composeLineDraft/);
   assert.match(workflowView, /setDraftFromSource/);
   assert.match(workflowView, /setLineChoice/);
@@ -274,10 +284,12 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.doesNotMatch(workflowView, /class="[^"]*conflict-file-list/);
   assert.match(workflowView, /class="text-candidate"/);
   assert.match(workflowView, /class="code-editor-shell"/);
+  assert.match(workflowView, /'no-highlight': isLargeTextCandidate/);
   assert.match(workflowView, /class="code-highlight candidate-highlight"/);
   assert.match(workflowView, /ref="candidateHighlight"/);
   assert.match(workflowView, /@scroll="syncCandidateHighlightScroll"/);
-  assert.match(workflowView, /v-html="highlightedCode\(textCandidate\)"/);
+  assert.match(workflowView, /v-if="!isLargeTextCandidate"/);
+  assert.match(workflowView, /v-html="highlightedTextCandidate"/);
   assert.match(workflowView, /v-html="highlightedCode\(sourceContent\(source\)\)"/);
   assert.match(workflowView, /class="text-line-merge"/);
   assert.match(workflowView, /class="text-line-table"/);
@@ -342,6 +354,7 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, />BOTH</);
   assert.match(workflowView, />NONE</);
   assert.match(workflowView, /class="choice-current"/);
+  assert.match(workflowView, /current-\$\{row\.choice\}/);
   assert.match(workflowView, /class="choice-state-dot"/);
   assert.match(workflowView, /candidatePath/);
   assert.match(workflowView, /restoreCandidateResult\(path,/);
@@ -362,6 +375,9 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.doesNotMatch(css, /\.conflict-box\.has-candidates/);
   assert.match(css, /\.code-highlight/);
   assert.match(css, /\.candidate-highlight/);
+  assert.match(css, /\.code-editor-shell\.no-highlight textarea/);
+  assert.match(css, /\.theme-light \.code-editor-shell\.no-highlight textarea/);
+  assert.match(css, /\.theme-dark \.code-editor-shell\.no-highlight textarea/);
   assert.match(css, /\.binary-choice-grid/);
   assert.match(css, /\.table-workbench-hero/);
   assert.match(css, /\.table-sheet-tabs/);
@@ -395,8 +411,13 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.ok(css.indexOf(".theme-dark textarea") < css.indexOf(".theme-dark .code-editor-shell textarea"));
   assert.match(css, /\.theme-dark \.code-editor-shell textarea[\s\S]*background: transparent/);
   assert.match(css, /\.theme-light \.code-editor-shell textarea[\s\S]*background: transparent/);
+  assert.ok(css.indexOf(".theme-light .code-editor-shell textarea") < css.lastIndexOf(".theme-light .code-editor-shell.no-highlight textarea"));
+  assert.ok(css.indexOf(".theme-dark .code-editor-shell textarea") < css.lastIndexOf(".theme-dark .code-editor-shell.no-highlight textarea"));
   assert.match(css, /\.choice-current/);
+  assert.match(css, /\.choice-current\.current-ours/);
+  assert.match(css, /\.choice-current\.current-theirs/);
   assert.match(css, /\.choice-state-dot/);
+  assert.match(css, /\.line-choice \.text-choice-btn:not\(\.active\)/);
   assert.match(css, /\.line-choice \.text-choice-btn\.active::after/);
   assert.match(css, /\.candidate-result/);
   assert.match(css, /\.open-candidate-btn/);
