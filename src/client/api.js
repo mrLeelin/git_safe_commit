@@ -11,6 +11,10 @@ export async function loadState() {
   return request("/api/state");
 }
 
+export async function refreshAudit() {
+  return request("/api/audit/refresh");
+}
+
 export async function loadAiInstallations() {
   const result = await request("/api/ai/installations");
   return result.installations || [];

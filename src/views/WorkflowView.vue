@@ -16,6 +16,7 @@ const props = defineProps({
   labels: { type: Object, required: true },
   summary: { type: Object, default: null },
   status: { type: Object, default: null },
+  audit: { type: Object, default: null },
   sections: { type: Array, default: () => [] },
   files: { type: Array, default: () => [] },
   selectableFiles: { type: Array, default: () => [] },
@@ -24,6 +25,8 @@ const props = defineProps({
   config: { type: Object, default: null },
   blockers: { type: Array, default: () => [] },
   recovery: { type: Object, default: null },
+  logs: { type: Array, default: () => [] },
+  details: { type: String, default: "" },
   busy: { type: String, default: "" },
   commitResetKey: { type: Number, default: 0 },
   operationNotice: { type: Object, default: null },
@@ -76,6 +79,35 @@ const workbenchActive = computed(() => Boolean(activeConflictPath.value));
 const selectedFileCount = computed(() => selectedPaths.value.length);
 const selectedFilesLabel = computed(() => `${selectedFileCount.value} / ${props.selectableFiles.length}`);
 const changedCount = computed(() => props.files.length);
+const auditTone = computed(() => {
+  if (props.audit?.verdict === "blocked") return "bad";
+  if (props.audit?.verdict === "needs_confirmation") return "warn";
+  return "ok";
+});
+const auditVerdictLabel = computed(() => {
+  if (props.audit?.verdict === "blocked") return "阻止继续";
+  if (props.audit?.verdict === "needs_confirmation") return "需要确认";
+  if (props.audit?.verdict === "passed") return "通过";
+  return "未检查";
+});
+const auditFindings = computed(() => props.audit?.findings || []);
+const auditRiskFiles = computed(() => props.audit?.riskFiles || []);
+const auditActionableFindings = computed(() => auditFindings.value.filter((finding) => ["blocked", "warn"].includes(finding.severity)));
+const hasRestorableToolStashes = computed(() => Number(props.audit?.counts?.discardStash || 0) > 0);
+const canRestoreToolStashes = computed(() => hasRestorableToolStashes.value && !props.busy);
+const auditIsExpanded = computed(() => {
+  return auditTone.value !== "ok" && (auditActionableFindings.value.length > 0 || auditRiskFiles.value.length > 0 || hasRestorableToolStashes.value);
+});
+const auditSummaryText = computed(() => {
+  if (!props.audit) return "未检查";
+  if (props.audit.verdict === "passed") return "安全检查通过";
+  const parts = [];
+  if (props.audit.counts?.risk) parts.push(`需确认文件 ${props.audit.counts.risk} 个`);
+  if (props.audit.counts?.discardStash) parts.push(`可恢复 stash ${props.audit.counts.discardStash} 个`);
+  if (auditActionableFindings.value.some((finding) => finding.code === "staged-out-of-scope")) parts.push("暂存区范围不一致");
+  if (!parts.length) parts.push(auditVerdictLabel.value);
+  return parts.join(" · ");
+});
 const rebaseInProgress = computed(() => Boolean(props.summary?.rebaseInProgress || props.status?.rebaseInProgress));
 const canAbortRebase = computed(() => rebaseInProgress.value && !props.busy);
 const canCommit = computed(() => !commitBlockReason.value && !props.busy);
@@ -340,6 +372,18 @@ function diffLineKind(line) {
   return "context";
 }
 
+function riskLabel(label) {
+  return ({
+    "private-config": "需确认配置",
+    env: "环境变量",
+    secret: "密钥",
+    table: "需确认表格",
+    "unity-resource": "Unity资源",
+    generated: "生成物",
+    binary: "二进制文件"
+  })[label] || label;
+}
+
 async function runCommit() {
   if (commitBlockReason.value) {
     alert(commitBlockReason.value);
@@ -390,6 +434,10 @@ function confirmDiscardSelected() {
     return;
   }
   confirmAction.value = "discard-selected";
+}
+
+function restoreToolStashes() {
+  emit("action", "restore-tool-stashes");
 }
 
 function confirmExecute() {
@@ -1176,6 +1224,28 @@ async function ensureCommitMessage({ force = false } = {}) {
     <button type="button" aria-label="关闭操作提示" @click='emit("clear-operation-notice")'>关闭</button>
   </div>
 
+  <div v-if="audit" class="audit-card" :class="[auditTone, { compact: !auditIsExpanded }]" role="status">
+    <div class="audit-main">
+      <strong>提交安全检查：{{ auditVerdictLabel }}</strong>
+      <span>{{ auditSummaryText }}</span>
+      <button
+        v-if="hasRestorableToolStashes"
+        class="audit-action"
+        type="button"
+        :disabled="!canRestoreToolStashes"
+        @click="restoreToolStashes"
+      >恢复并清理</button>
+    </div>
+    <div v-if="auditIsExpanded && auditActionableFindings.length" class="audit-findings">
+      <span v-for="finding in auditActionableFindings.slice(0, 3)" :key="finding.code">
+        {{ finding.message }}
+      </span>
+    </div>
+    <div v-if="auditIsExpanded && auditRiskFiles.length" class="audit-risk-line">
+      <code v-for="risk in auditRiskFiles.slice(0, 4)" :key="risk.path">{{ risk.path }}</code>
+    </div>
+  </div>
+
   <section class="status-metrics">
     <div class="metric" :class="readiness.tone"><span>{{ labels.safety }}</span><strong>{{ readiness.label }}</strong></div>
     <div class="metric"><span>{{ labels.branch }}</span><strong>{{ summary?.branch || "-" }}</strong></div>
@@ -1238,7 +1308,13 @@ async function ensureCommitMessage({ force = false } = {}) {
           @keydown.space.prevent="togglePath(file.path, $event)"
         >
           <span class="checkmark" aria-hidden="true"></span>
-          <span class="file-meta"><strong>{{ file.path }}</strong><small>{{ file.group }} · {{ file.status }}</small></span>
+          <span class="file-meta">
+            <strong>{{ file.path }}</strong>
+            <small>{{ file.group }} · {{ file.status }}</small>
+            <span v-if="file.risk?.labels?.length" class="file-risk-tags">
+              <em v-for="label in file.risk.labels" :key="`${file.path}:${label}`">{{ riskLabel(label) }}</em>
+            </span>
+          </span>
           <button
             class="text-button file-detail-trigger"
             type="button"

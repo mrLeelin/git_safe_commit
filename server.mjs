@@ -70,6 +70,14 @@ app.get("/api/state", (_req, res) => {
   res.json({ ok: true, state: runner.state, logs: sessionLogs.slice(-200) });
 });
 
+app.get("/api/audit/refresh", async (_req, res, next) => {
+  try {
+    res.json(await runner.inspectSnapshot());
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/system/pick-folder", async (_req, res, next) => {
   try {
     const result = await pickFolder();
@@ -271,7 +279,11 @@ if (useBuiltFrontend) {
 
 app.use((error, _req, res, _next) => {
   appendLog("error", { message: error.message });
-  res.status(500).json({ ok: false, error: error.message });
+  res.status(500).json({
+    ok: false,
+    error: error.message,
+    audit: error.audit || null
+  });
 });
 
 const server = app.listen(config.server.port, config.server.host, () => {

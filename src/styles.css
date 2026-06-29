@@ -392,6 +392,92 @@ h3 { font-size: 15px; margin-bottom: 10px; }
   font-weight: 800;
 }
 
+.audit-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  padding: 12px 14px;
+}
+.audit-card.compact {
+  gap: 0;
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  padding: 8px 12px;
+}
+.audit-card.ok {
+  border-color: #86efac;
+  background: #ecfdf5;
+  color: #065f46;
+}
+.audit-card.compact.ok {
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--muted);
+}
+.audit-card.warn {
+  border-color: #fde68a;
+  background: var(--amber-soft);
+  color: #92400e;
+}
+.audit-card.bad {
+  border-color: #fecaca;
+  background: var(--red-soft);
+  color: #991b1b;
+}
+.audit-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: baseline;
+}
+.audit-main strong {
+  font-size: 14px;
+}
+.audit-card.compact .audit-main strong {
+  color: var(--ink);
+}
+.audit-main span,
+.audit-findings span {
+  font-size: 12px;
+}
+.audit-action {
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .72);
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 10px;
+}
+.audit-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, .92);
+}
+.audit-action:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+.audit-findings {
+  display: grid;
+  gap: 3px;
+}
+.audit-risk-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.audit-risk-line code {
+  border: 1px solid rgba(15, 23, 42, .12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .62);
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
 .status-metrics {
   display: grid;
   grid-template-columns: 1.25fr 1fr 1fr 1fr;
@@ -602,6 +688,25 @@ textarea {
   font-size: 13px;
 }
 .file-meta small { color: var(--muted); }
+.file-risk-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.file-risk-tags em {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid #fcd34d;
+  border-radius: 999px;
+  background: #fffbeb;
+  color: #92400e;
+  padding: 1px 6px;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.4;
+}
 .file-detail-trigger {
   flex: 0 0 auto;
   white-space: nowrap;
@@ -2581,20 +2686,32 @@ textarea {
   color: #f8fafc;
 }
 .theme-dark .status-metrics .metric.ok {
-  border-color: #166534;
-  background: #14532d;
+  border-color: rgba(45, 212, 191, .42);
+  background: linear-gradient(180deg, #102231, #0d1b2a);
 }
 .theme-dark .status-metrics .metric.info {
-  border-color: #1d4ed8;
-  background: #12325c;
+  border-color: rgba(96, 165, 250, .4);
+  background: linear-gradient(180deg, #11243a, #0d1b2a);
 }
 .theme-dark .status-metrics .metric.warn {
-  border-color: #92400e;
-  background: #451a03;
+  border-color: rgba(245, 158, 11, .46);
+  background: linear-gradient(180deg, #2a2115, #111c2c);
 }
 .theme-dark .status-metrics .metric.bad {
-  border-color: #991b1b;
-  background: #450a0a;
+  border-color: rgba(248, 113, 113, .48);
+  background: linear-gradient(180deg, #2d171d, #111c2c);
+}
+.theme-dark .status-metrics .metric.ok strong {
+  color: #ccfbf1;
+}
+.theme-dark .status-metrics .metric.info strong {
+  color: #bfdbfe;
+}
+.theme-dark .status-metrics .metric.warn strong {
+  color: #fde68a;
+}
+.theme-dark .status-metrics .metric.bad strong {
+  color: #fecaca;
 }
 .theme-dark .commit-card,
 .theme-dark .action-card,
@@ -2667,6 +2784,11 @@ textarea {
 }
 .theme-dark .queue-row .file-meta small {
   color: #93a4b7;
+}
+.theme-dark .file-risk-tags em {
+  border-color: rgba(245, 158, 11, .38);
+  background: rgba(245, 158, 11, .1);
+  color: #fcd34d;
 }
 .theme-dark .checkmark {
   border-color: #43556e;
@@ -2757,13 +2879,13 @@ textarea {
   background: #14b8a6;
 }
 .theme-dark .commit-actions .btn.danger {
-  border-color: #dc2626;
-  background: #dc2626;
+  border-color: #ef4444;
+  background: linear-gradient(180deg, #dc2626, #b91c1c);
   color: #fff;
 }
 .theme-dark .commit-actions .btn.danger:hover:not(:disabled) {
-  border-color: #b91c1c;
-  background: #b91c1c;
+  border-color: #f87171;
+  background: linear-gradient(180deg, #ef4444, #c02626);
 }
 .theme-dark .commit-actions .btn.suggest {
   border-color: #f59e0b;
@@ -2788,7 +2910,8 @@ textarea {
   border-color: #14b8a6;
 }
 .theme-dark .action-card .btn.danger {
-  background: #dc2626;
+  border-color: #ef4444;
+  background: linear-gradient(180deg, #dc2626, #b91c1c);
 }
 .theme-dark .action-card .push-confirm {
   color: #e5edf7;
@@ -2802,23 +2925,62 @@ textarea {
   color: #93c5fd;
 }
 .theme-dark .action-card .safety-box.warn {
-  border-color: #92400e;
-  background: #451a03;
-  color: #fbbf24;
+  border-color: rgba(245, 158, 11, .42);
+  background: linear-gradient(180deg, #2a2115, #111c2c);
+  color: #fde68a;
 }
 .theme-dark .action-card .safety-box.warn pre {
-  color: #fbbf24;
+  color: #fde68a;
 }
 .theme-dark .action-card .safety-box.bad {
-  border-color: #991b1b;
-  background: #450a0a;
-  color: #fca5a5;
+  border-color: rgba(248, 113, 113, .48);
+  background: linear-gradient(180deg, #2d171d, #111c2c);
+  color: #fecaca;
 }
 .theme-dark .action-card .safety-box.bad pre {
-  color: #fca5a5;
+  color: #fecaca;
 }
 .theme-dark .action-card .disabled-reason {
   color: #93a4b7;
+}
+.theme-dark .audit-card {
+  border-color: rgba(96, 165, 250, .28);
+  background: linear-gradient(180deg, #0f1b2b, #0c1624);
+  color: #c7d2e1;
+}
+.theme-dark .audit-card.ok {
+  border-color: rgba(45, 212, 191, .42);
+  background:
+    linear-gradient(90deg, rgba(20, 184, 166, .18), rgba(15, 23, 42, 0) 34%),
+    linear-gradient(180deg, #102231, #0c1826);
+  color: #ccfbf1;
+}
+.theme-dark .audit-card.warn {
+  border-color: rgba(245, 158, 11, .48);
+  background:
+    linear-gradient(90deg, rgba(245, 158, 11, .16), rgba(15, 23, 42, 0) 34%),
+    linear-gradient(180deg, #2a2115, #0c1826);
+  color: #fde68a;
+}
+.theme-dark .audit-card.bad {
+  border-color: rgba(248, 113, 113, .52);
+  background:
+    linear-gradient(90deg, rgba(248, 113, 113, .16), rgba(15, 23, 42, 0) 34%),
+    linear-gradient(180deg, #2d171d, #0c1826);
+  color: #fecaca;
+}
+.theme-dark .audit-card.compact.ok {
+  border-color: #26374d;
+  background: #0d1625;
+  color: #93a4b7;
+}
+.theme-dark .audit-card.compact .audit-main strong {
+  color: #e5edf7;
+}
+.theme-dark .audit-risk-line code {
+  border-color: rgba(148, 163, 184, .28);
+  background: rgba(2, 8, 23, .42);
+  color: #dbeafe;
 }
 .theme-dark .commit-card .disabled-reason {
   color: #f59e0b;

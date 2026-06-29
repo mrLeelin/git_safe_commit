@@ -41,6 +41,28 @@ test("workflow runner inspects without AI and emits phase events", async () => {
   assert.deepEqual(events.map((item) => item.event), ["phase", "phase"]);
 });
 
+test("workflow runner creates silent audit snapshots without phase events", async () => {
+  const repo = await createRepo("gsc-runner-silent-audit-");
+  const events = [];
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    },
+    emit: (event, data) => events.push({ event, data })
+  });
+
+  const result = await runner.inspectSnapshot();
+
+  assert.equal(result.ok, true);
+  assert.equal(result.status.branch, "main");
+  assert.equal(result.summary.branch, "main");
+  assert.equal(result.audit.action, "inspect");
+  assert.deepEqual(events, []);
+  assert.equal(runner.state.phase, "Idle");
+});
+
 test("workflow runner commits selected files directly without AI", async () => {
   const repo = await createRepo();
   await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
@@ -63,6 +85,41 @@ test("workflow runner commits selected files directly without AI", async () => {
   assert.equal(fetchCalled, false);
   assert.match(git(repo, ["log", "-1", "--pretty=%s"]).trim(), /^Commit selected file directly$/);
   assert.match(git(repo, ["show", "--name-only", "--pretty=", "HEAD"]).trim(), /^tracked\.txt$/);
+});
+
+test("workflow runner blocks commit when staged files are outside the selected scope", async () => {
+  const repo = await createRepo("gsc-commit-scope-runner-");
+  await writeFile(path.join(repo, "other.txt"), "other\n", "utf8");
+  git(repo, ["add", "other.txt"]);
+  git(repo, ["commit", "-m", "add other"]);
+  await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
+  await writeFile(path.join(repo, "other.txt"), "staged outside selection\n", "utf8");
+  git(repo, ["add", "other.txt"]);
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  let error;
+  try {
+    await runner.run("commit", { paths: ["tracked.txt"], message: "Commit selected file only" });
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error);
+  assert.match(error.message, /staged files outside selected commit scope/i);
+  assert.equal(error.audit?.verdict, "blocked");
+  assert.deepEqual(
+    error.audit.findings.find((finding) => finding.code === "staged-out-of-scope")?.paths,
+    ["other.txt"]
+  );
+  const status = git(repo, ["status", "--short"]);
+  assert.match(status, /^ M tracked\.txt/m);
+  assert.match(status, /^M  other\.txt/m);
 });
 
 test("workflow runner discards only selected working tree paths", async () => {
@@ -89,6 +146,106 @@ test("workflow runner discards only selected working tree paths", async () => {
   await assert.rejects(() => access(path.join(repo, "new.txt")));
   assert.equal(await readFile(path.join(repo, "other.txt"), "utf8"), "keep this change\n");
   assert.match(git(repo, ["status", "--short"]), /^ M other\.txt/m);
+});
+
+test("workflow runner audit reports tool-created discard stashes", async () => {
+  const repo = await createRepo("gsc-discard-stash-audit-runner-");
+  await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  await runner.run("discard-selected", { paths: ["tracked.txt"], confirmed: true });
+  const inspected = await runner.run("inspect");
+
+  assert.equal(inspected.audit.verdict, "needs_confirmation");
+  assert.equal(inspected.audit.counts.toolStash, 1);
+  assert.equal(inspected.toolStashes[0].type, "discard");
+  assert.match(inspected.toolStashes[0].subject, /git-safe-commit-tool discard/);
+  assert.equal(
+    inspected.audit.findings.find((finding) => finding.code === "tool-stashes-present")?.count,
+    1
+  );
+});
+
+test("workflow runner restores and drops discard stash after successful commit", async () => {
+  const repo = await createRepo("gsc-discard-restore-after-commit-runner-");
+  await writeFile(path.join(repo, "other.txt"), "other\n", "utf8");
+  git(repo, ["add", "other.txt"]);
+  git(repo, ["commit", "-m", "add other"]);
+  await writeFile(path.join(repo, "tracked.txt"), "discarded local edit\n", "utf8");
+  await writeFile(path.join(repo, "other.txt"), "commit this edit\n", "utf8");
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  await runner.run("discard-selected", { paths: ["tracked.txt"], confirmed: true });
+  const result = await runner.run("commit", { paths: ["other.txt"], message: "Commit other edit" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.restoredToolStashes?.ok, true);
+  assert.equal(result.restoredToolStashes.restored.length, 1);
+  assert.equal(result.restoredToolStashes.restored[0].drop.ok, true);
+  assert.equal(normalizeNewlines(await readFile(path.join(repo, "tracked.txt"), "utf8")), "discarded local edit\n");
+  assert.match(git(repo, ["status", "--short"]), /^ M tracked\.txt/m);
+  assert.equal(git(repo, ["stash", "list"]).trim(), "");
+});
+
+test("workflow runner exposes an action to restore and drop existing tool stashes", async () => {
+  const repo = await createRepo("gsc-restore-tool-stashes-runner-");
+  await writeFile(path.join(repo, "tracked.txt"), "recover me\n", "utf8");
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  await runner.run("discard-selected", { paths: ["tracked.txt"], confirmed: true });
+  const result = await runner.run("restore-tool-stashes");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.restoredToolStashes.ok, true);
+  assert.equal(result.restoredToolStashes.restored.length, 1);
+  assert.equal(result.audit.counts.toolStash, 0);
+  assert.equal(normalizeNewlines(await readFile(path.join(repo, "tracked.txt"), "utf8")), "recover me\n");
+  assert.equal(git(repo, ["stash", "list"]).trim(), "");
+});
+
+test("workflow runner default stash restore ignores historical sync stashes", async () => {
+  const repo = await createRepo("gsc-restore-discard-only-runner-");
+  await writeFile(path.join(repo, "sync.txt"), "sync base\n", "utf8");
+  git(repo, ["add", "sync.txt"]);
+  git(repo, ["commit", "-m", "add sync fixture"]);
+  await writeFile(path.join(repo, "tracked.txt"), "discard restore\n", "utf8");
+  git(repo, ["stash", "push", "-m", "git-safe-commit-tool discard manual", "--", "tracked.txt"]);
+  await writeFile(path.join(repo, "sync.txt"), "historical sync restore\n", "utf8");
+  git(repo, ["stash", "push", "-m", "git-safe-commit-tool sync manual", "--", "sync.txt"]);
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  const result = await runner.run("restore-tool-stashes");
+
+  assert.equal(result.ok, true);
+  assert.equal(result.restoredToolStashes.restored.length, 1);
+  assert.equal(normalizeNewlines(await readFile(path.join(repo, "tracked.txt"), "utf8")), "discard restore\n");
+  assert.equal(normalizeNewlines(await readFile(path.join(repo, "sync.txt"), "utf8")), "sync base\n");
+  assert.match(git(repo, ["stash", "list"]), /git-safe-commit-tool sync manual/);
+  assert.doesNotMatch(git(repo, ["stash", "list"]), /git-safe-commit-tool discard manual/);
 });
 
 test("workflow runner fetches remote refs directly without AI and refreshes status", async () => {
@@ -351,6 +508,7 @@ test("workflow runner temporarily stashes dirty worktree while AI sync-and-push 
   assert.equal(result.syncStash.stash.ok, true);
   assert.equal(result.syncStash.apply.ok, true);
   assert.equal(result.syncStash.drop.ok, true);
+  assert.equal(result.syncStash.verified.stashDropped, true);
   assert.equal(result.summary.ahead, 0);
   assert.equal(result.summary.cleanWorktree, false);
   assert.equal(git(repo, ["rev-parse", "@{u}"]).trim(), committedHead);

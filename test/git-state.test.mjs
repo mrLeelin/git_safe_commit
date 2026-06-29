@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { collectGitState, summarizeGitState } from "../lib/git-state.mjs";
+import { collectGitState, parseShortStatus, summarizeGitState } from "../lib/git-state.mjs";
 
 function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
@@ -34,6 +34,23 @@ test("collectGitState reports branch and dirty paths", async () => {
   assert.deepEqual(state.unstaged.map((item) => item.path), ["tracked.txt"]);
   assert.deepEqual(state.untracked, ["new.txt"]);
   assert.equal(state.unmerged.length, 0);
+});
+
+test("parseShortStatus reports paths that only appear in git status", () => {
+  const parsed = parseShortStatus([
+    "## main...origin/main",
+    " M JellybeanUnity/Assets/_Art/Materials/HomeMainView_Combo_Progress_Effect.mat",
+    "M  staged.txt",
+    " M \"JellybeanUnity/Assets/Plugins/Easy Save 3/Resources/ES3/ES3Defaults.asset\"",
+    "?? new.txt"
+  ].join("\n"));
+
+  assert.deepEqual(parsed.unstaged, [
+    { status: "M", path: "JellybeanUnity/Assets/_Art/Materials/HomeMainView_Combo_Progress_Effect.mat" },
+    { status: "M", path: "JellybeanUnity/Assets/Plugins/Easy Save 3/Resources/ES3/ES3Defaults.asset" }
+  ]);
+  assert.deepEqual(parsed.staged, [{ status: "M", path: "staged.txt" }]);
+  assert.deepEqual(parsed.untracked, ["new.txt"]);
 });
 
 test("summarizeGitState does not block whitespace-only diff check failures", () => {

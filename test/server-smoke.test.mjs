@@ -162,6 +162,17 @@ test("server exposes health, config, and inspect action", async () => {
     assert.equal(inspect.ok, true);
     assert.equal(inspect.summary.branch, "main");
 
+    const stateBeforeAuditRefreshResponse = await fetch(`${baseUrl}/api/state`);
+    const stateBeforeAuditRefresh = await stateBeforeAuditRefreshResponse.json();
+    const auditRefreshResponse = await fetch(`${baseUrl}/api/audit/refresh`);
+    const auditRefresh = await auditRefreshResponse.json();
+    const stateAfterAuditRefreshResponse = await fetch(`${baseUrl}/api/state`);
+    const stateAfterAuditRefresh = await stateAfterAuditRefreshResponse.json();
+    assert.equal(auditRefresh.ok, true);
+    assert.equal(auditRefresh.summary.branch, "main");
+    assert.equal(auditRefresh.audit.action, "inspect");
+    assert.equal(stateAfterAuditRefresh.logs.length, stateBeforeAuditRefresh.logs.length);
+
     await writeFile(path.join(repo, "tracked.txt"), "one\ntwo\n", "utf8");
     const fileDiffResponse = await fetch(`${baseUrl}/api/git/file-diff`, {
       method: "POST",

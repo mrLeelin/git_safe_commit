@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import {
   applyConflictCandidate as applyConflictCandidateApi,
   chooseRepoFolder as chooseRepoFolderApi,
@@ -15,6 +15,7 @@ import {
   openRepoFile as openRepoFileApi,
   loadTableConflict as loadTableConflictApi,
   loadTextConflict as loadTextConflictApi,
+  refreshAudit as refreshAuditApi,
   runAction as runActionApi,
   saveSettings as saveSettingsApi,
   suggestMessage as suggestMessageApi,
@@ -113,7 +114,8 @@ const railCollapsed = ref(false);
 const commitResetKey = ref(0);
 const conflictCandidates = ref({});
 const operationNotice = ref(null);
-const pushSuccessActions = new Set(["push", "ai-push", "continue-rebase-and-push", "abort-rebase", "ai-sync-and-push"]);
+const AuditRefreshIntervalMs = 3000;
+const pushSuccessActions = new Set(["push", "ai-push", "continue-rebase-and-push", "abort-rebase", "ai-sync-and-push", "restore-tool-stashes"]);
 const repositoryChangingActions = new Set([
   "inspect",
   "create-recovery",
@@ -124,6 +126,7 @@ const repositoryChangingActions = new Set([
   "resolve-conflict",
   "commit",
   "discard-selected",
+  "restore-tool-stashes",
   "continue-rebase-and-push",
   "abort-rebase",
   "ai-commit",
@@ -135,6 +138,7 @@ const view = reactive({
   state: null,
   logs: [],
   result: null,
+  audit: null,
   details: zh.waiting,
   busy: "",
   connection: zh.connecting,
@@ -145,6 +149,8 @@ const view = reactive({
   aiInstallations: [],
   toolVersion: ""
 });
+let auditRefreshTimer = 0;
+let auditRefreshRunning = false;
 
 const appClasses = computed(() => [
   `theme-${themeMode.value}`,
@@ -152,6 +158,8 @@ const appClasses = computed(() => [
 ]);
 const summary = computed(() => view.result?.summary || null);
 const status = computed(() => view.result?.status || null);
+const audit = computed(() => view.audit || view.result?.audit || null);
+const riskByPath = computed(() => new Map((audit.value?.riskFiles || []).map((risk) => [risk.path, risk])));
 const blockers = computed(() => view.state?.blockers || summary.value?.blockers || []);
 const displayedBlockers = computed(() => {
   const unmerged = status.value?.unmerged || [];
@@ -176,7 +184,8 @@ const files = computed(() => sections.value.flatMap((section) => section.files.m
   ...file,
   group: section.name,
   sectionId: section.id,
-  selectable: section.selectable
+  selectable: section.selectable,
+  risk: riskByPath.value.get(file.path) || null
 }))));
 const selectableFiles = computed(() => files.value.filter((file) => file.selectable));
 const conflictFiles = computed(() => files.value
@@ -209,6 +218,7 @@ const nextStep = computed(() => {
 });
 
 onMounted(init);
+onBeforeUnmount(stopAuditRefresh);
 
 async function init() {
   try {
@@ -217,6 +227,7 @@ async function init() {
     openEvents();
     await loadGraph();
     if (view.config?.repoPath) await runAction("inspect");
+    startAuditRefresh();
   } catch (error) {
     connect(false, error.message);
   }
@@ -252,11 +263,53 @@ async function refreshRepositoryView({ inspect = false } = {}) {
   const tasks = [loadConfigAndState(), loadGraph()];
   if (inspect && view.config?.repoPath) {
     tasks.push(runActionApi("inspect").then((result) => {
-      if (result.status || result.summary) view.result = { status: result.status, summary: result.summary };
+      if (result.status || result.summary) {
+        view.result = { status: result.status, summary: result.summary, audit: result.audit };
+        view.audit = result.audit || null;
+      }
     }));
   }
   await Promise.all(tasks);
   clearStaleOperationNotice();
+}
+
+function startAuditRefresh() {
+  if (auditRefreshTimer) return;
+  auditRefreshTimer = setInterval(refreshAuditNow, AuditRefreshIntervalMs);
+  window.addEventListener("visibilitychange", refreshAuditNow);
+}
+
+function stopAuditRefresh() {
+  if (auditRefreshTimer) {
+    clearInterval(auditRefreshTimer);
+    auditRefreshTimer = 0;
+  }
+  window.removeEventListener("visibilitychange", refreshAuditNow);
+}
+
+function canRefreshAudit() {
+  return Boolean(view.config?.repoPath)
+    && activeView.value === "workflow"
+    && document.visibilityState !== "hidden";
+}
+
+async function refreshAuditNow() {
+  if (view.busy) return;
+  if (auditRefreshRunning || !canRefreshAudit()) return;
+  auditRefreshRunning = true;
+  try {
+    const result = await refreshAuditApi();
+    if (view.busy) return;
+    if (result.status || result.summary) {
+      view.result = { status: result.status, summary: result.summary, audit: result.audit };
+      view.audit = result.audit || null;
+    }
+    clearStaleOperationNotice();
+  } catch (error) {
+    log("审计刷新失败", { message: error.message });
+  } finally {
+    auditRefreshRunning = false;
+  }
 }
 
 async function runAction(action, payload = {}) {
@@ -265,7 +318,8 @@ async function runAction(action, payload = {}) {
   log("界面操作", { action: labelAction(action), payload: publicPayload(payload) });
   try {
     const result = await runActionApi(action, payload);
-    if (result.status || result.summary) view.result = { status: result.status, summary: result.summary };
+    if (result.status || result.summary) view.result = { status: result.status, summary: result.summary, audit: result.audit };
+    if (result.audit) view.audit = result.audit;
     view.details = JSON.stringify(result, null, 2);
     log("操作完成", { action: labelAction(action), message: result.message || "" });
     showOperationNotice(action, result);
@@ -275,11 +329,14 @@ async function runAction(action, payload = {}) {
     }
   } catch (error) {
     view.details = `错误\n${error.message}`;
+    const failureAudit = error.data?.audit || null;
+    if (failureAudit) view.audit = failureAudit;
     log("操作失败", { action: labelAction(action), message: error.message });
     showOperationFailureNotice(action, error);
     if (repositoryChangingActions.has(action)) {
       try {
         await refreshRepositoryView({ inspect: true });
+        if (failureAudit) view.audit = failureAudit;
       } catch (refreshError) {
         log("刷新失败", { action: labelAction(action), message: refreshError.message });
       }
@@ -306,6 +363,8 @@ function showOperationNotice(action, result = {}) {
   const branch = result.summary?.branch || summary.value?.branch || "";
   const title = action === "continue-rebase-and-push"
     ? "变基已继续并推送成功"
+    : action === "restore-tool-stashes"
+      ? "stash 已恢复并清理"
     : action === "abort-rebase"
       ? "变基已复位"
     : action === "ai-sync-and-push"
@@ -313,6 +372,8 @@ function showOperationNotice(action, result = {}) {
       : "推送成功";
   const message = action === "abort-rebase"
     ? "已执行 git rebase --abort，工作区回到 rebase 之前的状态。"
+    : action === "restore-tool-stashes"
+    ? `已恢复 ${result.restoredToolStashes?.restored?.length || 0} 个工具 stash，并在恢复成功后删除。`
     : action === "ai-sync-and-push" && branch
     ? `分支 ${branch} 已同步远端并推送。`
     : branch
@@ -326,13 +387,17 @@ function showOperationNotice(action, result = {}) {
 }
 
 function showOperationFailureNotice(action, error = {}) {
-  if (!pushSuccessActions.has(action) || !isRemoteAdvancedPushFailure(error)) return;
-  operationNotice.value = {
-    tone: "warning",
-    action: "ai-sync-and-push",
-    title: "AI 判断：先同步远端",
-    message: "远端已有新提交，本次推送已取消。再次点击推送按钮时，AI 会先同步远端，成功后继续推送；不会 force push。"
-  };
+  if (isRemoteAdvancedPushFailure(error)) {
+    operationNotice.value = {
+      tone: "warning",
+      action: "ai-sync-and-push",
+      title: "AI 判断：先同步远端",
+      message: "远端已有新提交，本次推送已取消。再次点击推送按钮时，AI 会先同步远端，成功后继续推送；不会 force push。"
+    };
+    return;
+  }
+  const notice = explainFailure(action, error);
+  if (notice) operationNotice.value = notice;
 }
 
 function isRemoteAdvancedPushFailure(error = {}) {
@@ -343,6 +408,54 @@ function isRemoteAdvancedPushFailure(error = {}) {
 
 function isRemoteAdvancedPushMessage(message = "") {
   return /远端已有新提交|remote advanced before push|fetch first|non-fast-forward|updates were rejected/i.test(message);
+}
+
+function explainFailure(action, error = {}) {
+  const message = String(error.message || "");
+  const auditVerdict = error.data?.audit?.verdict;
+  if (/staged files outside selected commit scope/i.test(message) || auditVerdict === "blocked") {
+    return {
+      tone: "warning",
+      title: "提交安全检查已拦截",
+      message: "暂存区包含不在本次选择范围内的文件。先检查暂存区，避免把别的改动一起提交。"
+    };
+  }
+  if (/push requires clean worktree/i.test(message)) {
+    return {
+      tone: "warning",
+      title: "不能直接推送",
+      message: "当前还有未提交修改。可以使用 AI 同步后推送，工具会临时保存这些修改，推送后再恢复。"
+    };
+  }
+  if (/temporary stash restore failed/i.test(message)) {
+    return {
+      tone: "warning",
+      title: "临时修改恢复失败",
+      message: "远端操作已经停止或完成，但本地临时 stash 没有恢复干净。请先处理恢复提示，不要继续提交或推送。"
+    };
+  }
+  if (/tool stash restore failed|tool stash cleanup failed|tool stash ref is unavailable/i.test(message)) {
+    return {
+      tone: "warning",
+      title: "工具 stash 恢复失败",
+      message: "工具已经停止，没有删除失败的 stash。先处理工作区冲突或报错，再重新检查。"
+    };
+  }
+  if (/rebase|unmerged|conflict/i.test(message)) {
+    return {
+      tone: "warning",
+      title: "需要先处理冲突",
+      message: "当前仓库处在 rebase 或冲突状态。先处理冲突文件，再继续 rebase 或推送。"
+    };
+  }
+  if (action === "commit") {
+    return {
+      tone: "warning",
+      title: "提交失败",
+      message: message || "提交没有完成。请检查审计卡和日志里的阻塞原因。"
+    };
+  }
+  return null;
 }
 
 function clearOperationNotice() {
@@ -559,6 +672,7 @@ function labelAction(action) {
     "resolve-conflict": zh.conflictFiles,
     commit: zh.aiCommit,
     "discard-selected": "丢弃选中",
+    "restore-tool-stashes": "恢复并清理 stash",
     push: zh.aiPush,
     "ai-commit": zh.aiCommit,
     "ai-sync": zh.aiSync,
@@ -598,6 +712,7 @@ function publicPayload(payload) {
           :labels="zh"
           :summary="summary"
           :status="status"
+          :audit="audit"
           :sections="sections"
           :files="files"
           :selectable-files="selectableFiles"
