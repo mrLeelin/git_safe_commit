@@ -74,6 +74,63 @@ test("auditRepositoryState flags risky selected paths without blocking clean sco
   assert.equal(audit.findings.find((finding) => finding.code === "risky-selected-files")?.count, 1);
 });
 
+test("auditRepositoryState treats a resolved rebase as ready to continue during inspect", () => {
+  const audit = auditRepositoryState({
+    action: "inspect",
+    status: {
+      staged: [{ status: "M", path: "src/table-conflict.csv" }],
+      unstaged: [],
+      untracked: [],
+      unmerged: [],
+      conflictMarkers: [],
+      rebaseInProgress: true
+    },
+    summary: {
+      cleanWorktree: false,
+      blockers: [],
+      rebaseInProgress: true,
+      unmergedCount: 0,
+      markerCount: 0
+    }
+  });
+
+  assert.equal(audit.verdict, "needs_confirmation");
+  assert.equal(audit.title, "需要确认");
+  assert.equal(
+    audit.findings.find((finding) => finding.code === "rebase-ready-to-continue")?.severity,
+    "warn"
+  );
+  assert.ok(audit.riskFiles.find((file) => file.path === "src/table-conflict.csv")?.labels.includes("table"));
+});
+
+test("auditRepositoryState blocks non-rebase actions while rebase is still active", () => {
+  const audit = auditRepositoryState({
+    action: "commit",
+    selectedPaths: ["src/app.js"],
+    status: {
+      staged: [{ status: "M", path: "src/app.js" }],
+      unstaged: [],
+      untracked: [],
+      unmerged: [],
+      conflictMarkers: [],
+      rebaseInProgress: true
+    },
+    summary: {
+      cleanWorktree: false,
+      blockers: [],
+      rebaseInProgress: true,
+      unmergedCount: 0,
+      markerCount: 0
+    }
+  });
+
+  assert.equal(audit.verdict, "blocked");
+  assert.equal(
+    audit.findings.find((finding) => finding.code === "rebase-ready-to-continue")?.message,
+    "当前处于 rebase 流程，请先继续或复位 rebase，不能执行这个动作。"
+  );
+});
+
 test("auditRepositoryState does not treat unselected unstaged files as audit risks", () => {
   const audit = auditRepositoryState({
     action: "inspect",

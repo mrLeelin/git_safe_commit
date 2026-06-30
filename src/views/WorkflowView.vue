@@ -35,7 +35,7 @@ const props = defineProps({
   themeMode: { type: String, default: "light" }
 });
 
-const emit = defineEmits(["action", "commit", "load-text-conflict", "write-text-candidate", "load-table-conflict", "write-table-candidate", "load-binary-conflict", "write-binary-candidate", "apply-candidate", "open-repo-file", "load-file-diff", "export-binary-conflict", "candidate-created", "suggest-message", "blocked", "clear-operation-notice"]);
+const emit = defineEmits(["action", "commit", "load-text-conflict", "write-text-candidate", "load-table-conflict", "write-table-candidate", "load-binary-conflict", "write-binary-candidate", "apply-candidate", "open-repo-file", "load-file-diff", "export-binary-conflict", "candidate-created", "suggest-message", "review-audit", "blocked", "clear-operation-notice"]);
 
 const selectedPaths = ref([]);
 const commitMessage = ref("");
@@ -69,6 +69,9 @@ const candidateResultsByPath = ref({});
 const workbenchMessage = ref("");
 const candidateHighlight = ref(null);
 const applyingCandidatePath = ref("");
+const aiReview = ref(null);
+const aiReviewError = ref("");
+const aiReviewTarget = ref("");
 const tableSideScrollers = { ours: null, theirs: null };
 const tablePreviewScroller = ref(null);
 let syncingTableSideScroll = false;
@@ -107,6 +110,13 @@ const auditSummaryText = computed(() => {
   if (auditActionableFindings.value.some((finding) => finding.code === "staged-out-of-scope")) parts.push("暂存区范围不一致");
   if (!parts.length) parts.push(auditVerdictLabel.value);
   return parts.join(" · ");
+});
+const auditConfirmationText = computed(() => {
+  if (props.audit?.verdict !== "needs_confirmation") return "";
+  if (rebaseInProgress.value) {
+    return "确认方式：在已解决冲突确认区逐个查看暂存 diff；确认后点击继续变基并推送，并在弹窗里点确认执行。";
+  }
+  return "确认方式：打开风险文件详情核对；确认后继续执行当前操作。";
 });
 const rebaseInProgress = computed(() => Boolean(props.summary?.rebaseInProgress || props.status?.rebaseInProgress));
 const canAbortRebase = computed(() => rebaseInProgress.value && !props.busy);
@@ -230,6 +240,30 @@ const tableAlignmentLabel = computed(() => {
   if (tableMerge.value?.rowAlignment === "manual-key") return `主键: ${tableKeyColumnName(tableMerge.value.keyColumn)}`;
   return "自动: 按行列";
 });
+
+const conflictQueueSummary = computed(() => {
+  const total = props.conflictFiles.length;
+  if (!total) return "";
+  const ready = props.conflictFiles.filter((file) => Boolean(conflictCandidateFor(file))).length;
+  const manual = props.conflictFiles.filter(conflictNeedsManualReview).length;
+  const parts = [`冲突 ${total} 个`, `候选 ${ready}/${total}`];
+  if (manual) parts.push(`需人工确认 ${manual}`);
+  return parts.join(" · ");
+});
+const resolvedRebaseReviewFiles = computed(() => {
+  if (!rebaseInProgress.value || props.conflictFiles.length) return [];
+  return props.selectableFiles.filter((file) => file.sectionId === "staged");
+});
+const resolvedRebaseRiskFiles = computed(() => resolvedRebaseReviewFiles.value.filter((file) => file.risk?.risky));
+const resolvedRebaseReviewSummary = computed(() => {
+  const total = resolvedRebaseReviewFiles.value.length;
+  if (!total) return "";
+  const risk = resolvedRebaseRiskFiles.value.length;
+  return risk ? `已暂存 ${total} 个文件 · 需重点确认 ${risk} 个` : `已暂存 ${total} 个文件`;
+});
+const canReviewResolvedRebaseWithAi = computed(() => resolvedRebaseReviewFiles.value.length > 0 && props.busy !== "ai-audit-review");
+const selectedReviewFiles = computed(() => props.selectableFiles.filter((file) => selectedPaths.value.includes(file.path)));
+const canReviewSelectedFilesWithAi = computed(() => selectedReviewFiles.value.length > 0 && props.busy !== "ai-audit-review");
 
 const commitBlockReason = computed(() => {
   if (!props.config?.repoPath) return "缺少仓库路径";
@@ -528,8 +562,42 @@ function conflictRowClass(file) {
   const hasCandidate = Boolean(conflictCandidateFor(file));
   return {
     "candidate-ready": hasCandidate,
-    "candidate-missing": !hasCandidate
+    "candidate-missing": !hasCandidate,
+    "manual-review": conflictNeedsManualReview(file)
   };
+}
+
+function conflictWorkbenchType(file) {
+  if (isTableConflict(file)) return "table";
+  if (isTextConflict(file)) return "text";
+  return "binary";
+}
+
+function conflictWorkbenchLabel(file) {
+  return ({
+    text: "文本工作台",
+    table: "表格工作台",
+    binary: "二进制工作台"
+  })[conflictWorkbenchType(file)];
+}
+
+function conflictRiskLabels(file) {
+  return file?.risk?.labels || [];
+}
+
+function conflictNeedsManualReview(file) {
+  const labels = conflictRiskLabels(file);
+  return conflictWorkbenchType(file) === "binary"
+    || labels.some((label) => ["private-config", "env", "secret", "table", "unity-resource", "binary"].includes(label));
+}
+
+function conflictGuidance(file) {
+  if (conflictRiskLabels(file).some((label) => ["private-config", "env", "secret"].includes(label))) {
+    return "敏感配置或密钥冲突，只生成候选，不自动继续。";
+  }
+  if (conflictWorkbenchType(file) === "table") return "先在表格工作台逐格选择，再生成候选。";
+  if (conflictWorkbenchType(file) === "text") return "先生成候选，确认后应用并暂存。";
+  return "二进制冲突只能选择 ours/theirs 或导出对比。";
 }
 
 function isTextConflict(file) {
@@ -1186,6 +1254,44 @@ async function suggestMessage() {
   await ensureCommitMessage({ force: true });
 }
 
+async function reviewResolvedRebaseWithAi() {
+  const files = resolvedRebaseRiskFiles.value.length ? resolvedRebaseRiskFiles.value : resolvedRebaseReviewFiles.value;
+  if (!files.length) return;
+  aiReview.value = null;
+  aiReviewError.value = "";
+  aiReviewTarget.value = "rebase";
+  const risks = files
+    .filter((file) => file.risk)
+    .map((file) => ({ path: file.path, labels: file.risk.labels || [] }));
+  const result = await new Promise((resolve) => {
+    emit("review-audit", { paths: files.map((file) => file.path), risks, diffScope: "staged" }, resolve);
+  });
+  if (result?.ok) {
+    aiReview.value = result.review || "AI 未返回审查内容。";
+  } else {
+    aiReviewError.value = result?.error || "AI 审查失败。";
+  }
+}
+
+async function reviewSelectedFilesWithAi() {
+  const files = selectedReviewFiles.value;
+  if (!files.length) return;
+  aiReview.value = null;
+  aiReviewError.value = "";
+  aiReviewTarget.value = "selection";
+  const risks = files
+    .filter((file) => file.risk)
+    .map((file) => ({ path: file.path, labels: file.risk.labels || [] }));
+  const result = await new Promise((resolve) => {
+    emit("review-audit", { paths: files.map((file) => file.path), risks, diffScope: "combined" }, resolve);
+  });
+  if (result?.ok) {
+    aiReview.value = result.review || "AI 未返回审查内容。";
+  } else {
+    aiReviewError.value = result?.error || "AI 审查失败。";
+  }
+}
+
 async function ensureCommitMessage({ force = false } = {}) {
   const existingMessage = commitMessage.value.trim();
   if (existingMessage && !force) return existingMessage;
@@ -1244,6 +1350,7 @@ async function ensureCommitMessage({ force = false } = {}) {
     <div v-if="auditIsExpanded && auditRiskFiles.length" class="audit-risk-line">
       <code v-for="risk in auditRiskFiles.slice(0, 4)" :key="risk.path">{{ risk.path }}</code>
     </div>
+    <p v-if="auditConfirmationText" class="audit-confirmation-line">{{ auditConfirmationText }}</p>
   </div>
 
   <section class="status-metrics">
@@ -1327,10 +1434,19 @@ async function ensureCommitMessage({ force = false } = {}) {
 
       <div class="commit-actions">
         <button class="btn secondary suggest" type="button" :disabled="suggestingMessage || !selectedPaths.length" @click="suggestMessage">{{ suggestingMessage ? '生成中...' : 'AI 生成说明' }}</button>
+        <button
+          class="ai-review-btn queue-review-btn"
+          :class="{ loading: busy === 'ai-audit-review' && aiReviewTarget === 'selection' }"
+          type="button"
+          :disabled="!canReviewSelectedFilesWithAi"
+          @click="reviewSelectedFilesWithAi"
+        >{{ busy === 'ai-audit-review' && aiReviewTarget === 'selection' ? 'AI 审查中...' : 'AI 审查所选' }}</button>
         <button class="btn" type="button" :disabled="!canCommit" @click="runCommit">{{ labels.aiCommit }}</button>
         <button class="btn danger discard-selected" type="button" :disabled="Boolean(busy) || !selectedPaths.length" @click="confirmDiscardSelected">丢弃选中</button>
         <span class="disabled-reason">{{ commitBlockReason || "将按选中路径提交" }}</span>
       </div>
+      <pre v-if="aiReviewTarget === 'selection' && aiReview" class="ai-review-result selection-review-result">{{ aiReview }}</pre>
+      <p v-if="aiReviewTarget === 'selection' && aiReviewError" class="ai-review-error selection-review-error">{{ aiReviewError }}</p>
     </article>
 
     <aside class="action-card">
@@ -1351,13 +1467,53 @@ async function ensureCommitMessage({ force = false } = {}) {
         <span class="disabled-reason">{{ remoteActionBlockReason || pushReadyText }}</span>
       </div>
 
+      <div v-if="resolvedRebaseReviewFiles.length" class="resolved-rebase-box">
+        <strong>已解决冲突确认</strong>
+        <p>{{ resolvedRebaseReviewSummary }}</p>
+        <small>冲突工作台只在 Git 仍有未合并文件时显示。现在冲突已合并并暂存，请核对暂存结果后继续变基。</small>
+        <div class="resolved-review-actions">
+          <button
+            class="ai-review-btn"
+            :class="{ loading: busy === 'ai-audit-review' && aiReviewTarget === 'rebase' }"
+            type="button"
+            :disabled="!canReviewResolvedRebaseWithAi"
+            @click="reviewResolvedRebaseWithAi"
+          >{{ busy === 'ai-audit-review' && aiReviewTarget === 'rebase' ? 'AI 审查中...' : 'AI 审查暂存结果' }}</button>
+          <span>AI 只给建议，不会替你确认或继续变基。</span>
+        </div>
+        <pre v-if="aiReviewTarget === 'rebase' && aiReview" class="ai-review-result">{{ aiReview }}</pre>
+        <p v-if="aiReviewTarget === 'rebase' && aiReviewError" class="ai-review-error">{{ aiReviewError }}</p>
+        <div class="resolved-review-list">
+          <button
+            v-for="file in resolvedRebaseReviewFiles"
+            :key="`resolved:${file.path}`"
+            class="resolved-review-row"
+            type="button"
+            @click="openFileDetailModal(file)"
+          >
+            <code>{{ file.path }}</code>
+            <span v-if="file.risk?.labels?.length" class="conflict-risk-tags">
+              <em v-for="label in file.risk.labels" :key="`resolved:${file.path}:${label}`">{{ riskLabel(label) }}</em>
+            </span>
+            <span>查看暂存 diff</span>
+          </button>
+        </div>
+      </div>
+
       <div v-if="conflictFiles.length" class="conflict-box">
         <strong>{{ labels.conflictWorkbench }}</strong>
+        <p class="conflict-queue-summary">{{ conflictQueueSummary }}</p>
         <div v-for="file in conflictFiles" :key="file.path" class="conflict-row" :class="conflictRowClass(file)">
           <div class="conflict-file-meta">
             <code>{{ file.path }}</code>
+            <span class="workbench-type-pill">{{ conflictWorkbenchLabel(file) }}</span>
+            <span v-if="conflictNeedsManualReview(file)" class="manual-review-pill">人工确认</span>
             <span v-if="conflictCandidateFor(file)" class="candidate-ready-pill">候选已生成</span>
             <span v-else class="candidate-missing-pill">待生成候选</span>
+            <span v-if="conflictRiskLabels(file).length" class="conflict-risk-tags">
+              <em v-for="label in conflictRiskLabels(file)" :key="`${file.path}:${label}`">{{ riskLabel(label) }}</em>
+            </span>
+            <small class="conflict-guidance">{{ conflictGuidance(file) }}</small>
           </div>
           <div class="conflict-actions">
             <button

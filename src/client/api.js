@@ -52,6 +52,10 @@ export async function suggestMessage(payload = {}) {
   return request("/api/ai/suggest-message", { method: "POST", body: JSON.stringify(payload) });
 }
 
+export async function reviewAuditWithAi(payload = {}) {
+  return request("/api/ai/audit-review", { method: "POST", body: JSON.stringify(payload) });
+}
+
 export async function loadTextConflict(payload = {}) {
   return request("/api/conflict/text/load", { method: "POST", body: JSON.stringify(payload) });
 }

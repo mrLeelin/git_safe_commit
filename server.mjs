@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 
 import { detectInstalledAi } from "./lib/ai-installations.mjs";
+import { reviewAuditWithAi } from "./lib/ai-audit-review.mjs";
 import { suggestCommitMessage } from "./lib/commit-message-suggester.mjs";
 import { defaultConfigPath, loadConfig, maskConfig, saveConfig } from "./lib/config.mjs";
 import {
@@ -137,6 +138,19 @@ app.post("/api/ai/suggest-message", async (req, res, next) => {
     const { message } = await suggestCommitMessage({ config, paths });
     appendLog("ai-suggest-message", { paths, messageLength: message.length });
     res.json({ ok: true, message });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/ai/audit-review", async (req, res, next) => {
+  try {
+    const paths = Array.isArray(req.body.paths) ? req.body.paths : [];
+    const risks = Array.isArray(req.body.risks) ? req.body.risks : [];
+    const diffScope = req.body.diffScope === "combined" ? "combined" : "staged";
+    const result = await reviewAuditWithAi({ config, paths, risks, diffScope });
+    appendLog("ai-audit-review", { paths: result.paths, reviewLength: result.review.length, diffScope });
+    res.json(result);
   } catch (error) {
     next(error);
   }

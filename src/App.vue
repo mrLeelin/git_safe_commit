@@ -16,6 +16,7 @@ import {
   loadTableConflict as loadTableConflictApi,
   loadTextConflict as loadTextConflictApi,
   refreshAudit as refreshAuditApi,
+  reviewAuditWithAi as reviewAuditWithAiApi,
   runAction as runActionApi,
   saveSettings as saveSettingsApi,
   suggestMessage as suggestMessageApi,
@@ -506,6 +507,22 @@ async function suggestCommitMessage(paths, done) {
   }
 }
 
+async function reviewAuditWithAi(payload, done) {
+  view.busy = "ai-audit-review";
+  try {
+    const result = await reviewAuditWithAiApi(payload);
+    view.details = result.review || "";
+    log("AI 审查完成", { paths: result.paths || [], reviewLength: result.review?.length || 0 });
+    done(result);
+  } catch (error) {
+    view.details = `AI 审查失败: ${error.message}`;
+    log("AI 审查失败", { message: error.message });
+    done({ ok: false, error: error.message });
+  } finally {
+    view.busy = "";
+  }
+}
+
 async function loadTextConflict(payload, done) {
   try {
     done(await loadTextConflictApi(payload));
@@ -744,6 +761,7 @@ function publicPayload(payload) {
           @export-binary-conflict="exportBinaryConflict"
           @candidate-created="rememberConflictCandidate"
           @suggest-message="suggestCommitMessage"
+          @review-audit="reviewAuditWithAi"
           @blocked="setDetails"
         />
       </section>
