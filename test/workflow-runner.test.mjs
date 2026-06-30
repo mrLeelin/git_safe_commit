@@ -860,6 +860,50 @@ test("workflow runner accepts ai-commit payload and exposes commit tools", async
   assert.match(git(repo, ["log", "-1", "--pretty=%s"]).trim(), /^Explain narrow commit path$/);
 });
 
+test("workflow runner blocks AI commit when staged files are outside the selected scope", async () => {
+  const repo = await createRepo("gsc-ai-commit-scope-runner-");
+  await writeFile(path.join(repo, "other.txt"), "other\n", "utf8");
+  git(repo, ["add", "other.txt"]);
+  git(repo, ["commit", "-m", "add other"]);
+  await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
+  await writeFile(path.join(repo, "other.txt"), "staged outside selection\n", "utf8");
+  git(repo, ["add", "other.txt"]);
+  const cliOutputs = [
+    JSON.stringify({ tool: "git_add", args: { paths: ["tracked.txt"] } }),
+    JSON.stringify({ tool: "git_commit", args: { message: "Commit selected file only" } })
+  ];
+  let callIndex = 0;
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: { selected: "claude" }
+    },
+    runProcess: async () => ({
+      ok: true, code: 0, stdout: cliOutputs[callIndex++] || "", stderr: "", command: "claude --print"
+    })
+  });
+
+  let error;
+  try {
+    await runner.run("ai-commit", { paths: ["tracked.txt"], message: "Commit selected file only" });
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error);
+  assert.match(error.message, /staged files outside selected commit scope/i);
+  assert.equal(error.audit?.verdict, "blocked");
+  assert.deepEqual(
+    error.audit.findings.find((finding) => finding.code === "staged-out-of-scope")?.paths,
+    ["other.txt"]
+  );
+  assert.match(git(repo, ["log", "-1", "--pretty=%s"]).trim(), /^add other$/);
+  const status = git(repo, ["status", "--short"]);
+  assert.match(status, /^M  tracked\.txt/m);
+  assert.match(status, /^M  other\.txt/m);
+});
+
 test("workflow runner blocks AI push when worktree has local changes", async () => {
   const repo = await createRepo("gsc-ai-push-dirty-runner-");
   const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-ai-push-dirty-remote-"));
