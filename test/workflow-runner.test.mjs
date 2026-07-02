@@ -87,6 +87,62 @@ test("workflow runner commits selected files directly without AI", async () => {
   assert.match(git(repo, ["show", "--name-only", "--pretty=", "HEAD"]).trim(), /^tracked\.txt$/);
 });
 
+test("workflow runner commits selected staged deletions without restaging missing files", async () => {
+  const repo = await createRepo("gsc-staged-delete-runner-");
+  await writeFile(path.join(repo, "delete-me.png"), "image fixture\n", "utf8");
+  git(repo, ["add", "delete-me.png"]);
+  git(repo, ["commit", "-m", "add image fixture"]);
+  git(repo, ["rm", "delete-me.png"]);
+  assert.match(git(repo, ["status", "--short", "--", "delete-me.png"]), /^D  delete-me\.png/m);
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  const result = await runner.run("commit", {
+    paths: ["delete-me.png"],
+    message: "Commit selected staged deletion"
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.add.skippedStagedOnlyPaths, ["delete-me.png"]);
+  assert.match(git(repo, ["show", "--name-status", "--pretty=", "HEAD"]), /^D\tdelete-me\.png/m);
+  assert.equal(git(repo, ["status", "--short"]).trim(), "");
+});
+
+test("workflow runner does not restage ignored paths that are already selected in the index", async () => {
+  const repo = await createRepo("gsc-ignored-selected-runner-");
+  await writeFile(path.join(repo, ".gitignore"), "ignored-*.log\n", "utf8");
+  await writeFile(path.join(repo, "ignored-replay.log"), "tracked log\n", "utf8");
+  git(repo, ["add", "-f", ".gitignore", "ignored-replay.log"]);
+  git(repo, ["commit", "-m", "track ignored fixture"]);
+  await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
+  git(repo, ["rm", "--cached", "ignored-replay.log"]);
+  await writeFile(path.join(repo, "ignored-replay.log"), "local ignored replay\n", "utf8");
+  assert.match(git(repo, ["status", "--short", "--ignored", "--", "ignored-replay.log"]), /^D  ignored-replay\.log\n!! ignored-replay\.log/m);
+
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  const result = await runner.run("commit", {
+    paths: ["tracked.txt", "ignored-replay.log"],
+    message: "Commit selected files without restaging ignored replay"
+  });
+
+  assert.equal(result.ok, true);
+  assert.match(git(repo, ["show", "--name-status", "--pretty=", "HEAD"]), /M\ttracked\.txt/);
+  assert.match(git(repo, ["show", "--name-status", "--pretty=", "HEAD"]), /D\tignored-replay\.log/);
+  assert.match(git(repo, ["status", "--short", "--ignored", "--", "ignored-replay.log"]), /^!! ignored-replay\.log/m);
+});
+
 test("workflow runner blocks commit when staged files are outside the selected scope", async () => {
   const repo = await createRepo("gsc-commit-scope-runner-");
   await writeFile(path.join(repo, "other.txt"), "other\n", "utf8");
@@ -111,7 +167,7 @@ test("workflow runner blocks commit when staged files are outside the selected s
   }
 
   assert.ok(error);
-  assert.match(error.message, /staged files outside selected commit scope/i);
+  assert.match(error.message, /暂存区里有未选中的文件/);
   assert.equal(error.audit?.verdict, "blocked");
   assert.deepEqual(
     error.audit.findings.find((finding) => finding.code === "staged-out-of-scope")?.paths,
@@ -120,6 +176,40 @@ test("workflow runner blocks commit when staged files are outside the selected s
   const status = git(repo, ["status", "--short"]);
   assert.match(status, /^ M tracked\.txt/m);
   assert.match(status, /^M  other\.txt/m);
+});
+
+test("workflow runner blocks stale selected paths before git add pathspec failure", async () => {
+  const repo = await createRepo("gsc-stale-selected-runner-");
+  await writeFile(path.join(repo, "tracked.txt"), "two\n", "utf8");
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  let error;
+  try {
+    await runner.run("commit", {
+      paths: ["missing-before-commit.txt"],
+      message: "Commit stale selection"
+    });
+  } catch (caught) {
+    error = caught;
+  }
+
+  assert.ok(error);
+  assert.match(error.message, /选中的文件已经不在当前变更列表中/);
+  assert.match(error.message, /missing-before-commit\.txt/);
+  assert.equal(error.audit?.verdict, "blocked");
+  assert.deepEqual(
+    error.audit.findings.find((finding) => finding.code === "selected-paths-stale")?.paths,
+    ["missing-before-commit.txt"]
+  );
+  assert.doesNotMatch(error.message, /pathspec/i);
+  assert.match(git(repo, ["status", "--short"]), /^ M tracked\.txt/m);
+  assert.match(git(repo, ["log", "-1", "--pretty=%s"]).trim(), /^initial$/);
 });
 
 test("workflow runner discards only selected working tree paths", async () => {
@@ -892,7 +982,7 @@ test("workflow runner blocks AI commit when staged files are outside the selecte
   }
 
   assert.ok(error);
-  assert.match(error.message, /staged files outside selected commit scope/i);
+  assert.match(error.message, /暂存区里有未选中的文件/);
   assert.equal(error.audit?.verdict, "blocked");
   assert.deepEqual(
     error.audit.findings.find((finding) => finding.code === "staged-out-of-scope")?.paths,

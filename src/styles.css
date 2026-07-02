@@ -693,6 +693,51 @@ textarea {
   font-size: 13px;
 }
 .file-meta small { color: var(--muted); }
+.file-status-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.change-kind {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.change-added {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #166534;
+}
+.change-updated,
+.change-renamed,
+.change-copied,
+.change-changed {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.change-deleted {
+  border-color: #fecaca;
+  background: #fee2e2;
+  color: #991b1b;
+}
+.change-conflict {
+  border-color: #fed7aa;
+  background: #ffedd5;
+  color: #9a3412;
+}
+.status-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
 .file-risk-tags {
   display: flex;
   flex-wrap: wrap;
@@ -938,9 +983,6 @@ textarea {
 @keyframes aiReviewSpin {
   to { transform: rotate(360deg); }
 }
-.queue-review-btn {
-  min-width: 128px;
-}
 .ai-review-result,
 .ai-review-error {
   margin: 0;
@@ -959,10 +1001,6 @@ textarea {
   border: 1px solid rgba(220, 38, 38, .24);
   background: #fee2e2;
   color: #991b1b;
-}
-.selection-review-result,
-.selection-review-error {
-  margin-top: 10px;
 }
 .resolved-review-row {
   display: grid;
@@ -2982,6 +3020,26 @@ textarea {
 }
 .theme-dark .queue-row .file-meta small {
   color: #93a4b7;
+}
+.theme-dark .change-kind {
+  border-color: rgba(96, 165, 250, .38);
+  background: rgba(37, 99, 235, .16);
+  color: #bfdbfe;
+}
+.theme-dark .change-added {
+  border-color: rgba(74, 222, 128, .42);
+  background: rgba(22, 163, 74, .18);
+  color: #bbf7d0;
+}
+.theme-dark .change-deleted {
+  border-color: rgba(248, 113, 113, .42);
+  background: rgba(185, 28, 28, .2);
+  color: #fecaca;
+}
+.theme-dark .change-conflict {
+  border-color: rgba(251, 146, 60, .42);
+  background: rgba(194, 65, 12, .2);
+  color: #fed7aa;
 }
 .theme-dark .file-risk-tags em {
   border-color: rgba(245, 158, 11, .38);

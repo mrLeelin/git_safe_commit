@@ -414,6 +414,14 @@ function isRemoteAdvancedPushMessage(message = "") {
 function explainFailure(action, error = {}) {
   const message = String(error.message || "");
   const auditVerdict = error.data?.audit?.verdict;
+  const auditFindings = error.data?.audit?.findings || [];
+  if (auditFindings.some((finding) => finding.code === "selected-paths-stale")) {
+    return {
+      tone: "warning",
+      title: "选择已过期",
+      message: "选中的文件已经不在当前变更列表中。刷新仓库状态后重新选择要提交的文件。"
+    };
+  }
   if (/staged files outside selected commit scope/i.test(message) || auditVerdict === "blocked") {
     return {
       tone: "warning",

@@ -72,11 +72,13 @@ const applyingCandidatePath = ref("");
 const aiReview = ref(null);
 const aiReviewError = ref("");
 const aiReviewTarget = ref("");
+const aiReviewRepoPath = ref("");
 const tableSideScrollers = { ours: null, theirs: null };
 const tablePreviewScroller = ref(null);
 let syncingTableSideScroll = false;
 let fileDiffRequestId = 0;
 let textCandidateRefreshFrame = 0;
+let aiReviewRequestId = 0;
 const workbenchActive = computed(() => Boolean(activeConflictPath.value));
 
 const selectedFileCount = computed(() => selectedPaths.value.length);
@@ -170,7 +172,7 @@ const visibleSelectableFiles = computed(() => {
   const query = selectionQuery.value.trim().toLowerCase();
   if (!query) return props.selectableFiles;
   return props.selectableFiles.filter((file) => {
-    return [file.path, file.group, file.status].some((value) => String(value || "").toLowerCase().includes(query));
+    return [file.path, file.group, file.status, fileChangeLabel(file)].some((value) => String(value || "").toLowerCase().includes(query));
   });
 });
 const detailQueueFile = computed(() => {
@@ -261,9 +263,7 @@ const resolvedRebaseReviewSummary = computed(() => {
   const risk = resolvedRebaseRiskFiles.value.length;
   return risk ? `已暂存 ${total} 个文件 · 需重点确认 ${risk} 个` : `已暂存 ${total} 个文件`;
 });
-const canReviewResolvedRebaseWithAi = computed(() => resolvedRebaseReviewFiles.value.length > 0 && props.busy !== "ai-audit-review");
-const selectedReviewFiles = computed(() => props.selectableFiles.filter((file) => selectedPaths.value.includes(file.path)));
-const canReviewSelectedFilesWithAi = computed(() => selectedReviewFiles.value.length > 0 && props.busy !== "ai-audit-review");
+const canReviewResolvedRebaseWithAi = computed(() => resolvedRebaseReviewFiles.value.length > 0 && !props.busy);
 
 const commitBlockReason = computed(() => {
   if (!props.config?.repoPath) return "缺少仓库路径";
@@ -291,7 +291,30 @@ watch(() => props.commitResetKey, () => {
   commitMessage.value = "";
   selectedPaths.value = [];
   clearFileDiffPreview();
+  clearAiReview();
 });
+
+watch(() => props.config?.repoPath, () => {
+  clearAiReview();
+});
+
+function clearAiReview(target = "") {
+  if (target && aiReviewTarget.value && aiReviewTarget.value !== target) return;
+  aiReviewRequestId++;
+  aiReview.value = null;
+  aiReviewError.value = "";
+  aiReviewTarget.value = "";
+  aiReviewRepoPath.value = "";
+}
+
+function beginAiReview(target) {
+  aiReviewRequestId++;
+  aiReview.value = null;
+  aiReviewError.value = "";
+  aiReviewTarget.value = target;
+  aiReviewRepoPath.value = props.config?.repoPath || "";
+  return aiReviewRequestId;
+}
 
 function togglePath(path, event) {
   if (event?.shiftKey && lastSelectedPath.value) {
@@ -327,6 +350,34 @@ function loadQueueFileDiff(file) {
       fileDiffError.value = result?.error || "读取文件变更失败";
     }
   });
+}
+
+function fileChangeKind(file) {
+  const status = String(file?.status || "").toUpperCase();
+  if (file?.sectionId === "untracked" || status.includes("?") || status.includes("A")) return "added";
+  if (status.includes("D")) return "deleted";
+  if (status.includes("R")) return "renamed";
+  if (status.includes("C")) return "copied";
+  if (status.includes("U")) return "conflict";
+  if (status.includes("M") || status.includes("T")) return "updated";
+  return "changed";
+}
+
+function fileChangeLabel(file) {
+  const labels = {
+    added: "新增",
+    updated: "更新",
+    deleted: "删除",
+    renamed: "重命名",
+    copied: "复制",
+    conflict: "冲突",
+    changed: "变更"
+  };
+  return labels[fileChangeKind(file)] || labels.changed;
+}
+
+function fileStatusText(file) {
+  return `${file.group} · ${fileChangeLabel(file)} · ${file.status}`;
 }
 
 function clearFileDiffPreview() {
@@ -1257,34 +1308,15 @@ async function suggestMessage() {
 async function reviewResolvedRebaseWithAi() {
   const files = resolvedRebaseRiskFiles.value.length ? resolvedRebaseRiskFiles.value : resolvedRebaseReviewFiles.value;
   if (!files.length) return;
-  aiReview.value = null;
-  aiReviewError.value = "";
-  aiReviewTarget.value = "rebase";
+  const reviewPaths = files.map((file) => file.path);
+  const requestId = beginAiReview("rebase");
   const risks = files
     .filter((file) => file.risk)
     .map((file) => ({ path: file.path, labels: file.risk.labels || [] }));
   const result = await new Promise((resolve) => {
-    emit("review-audit", { paths: files.map((file) => file.path), risks, diffScope: "staged" }, resolve);
+    emit("review-audit", { paths: reviewPaths, risks, diffScope: "staged" }, resolve);
   });
-  if (result?.ok) {
-    aiReview.value = result.review || "AI 未返回审查内容。";
-  } else {
-    aiReviewError.value = result?.error || "AI 审查失败。";
-  }
-}
-
-async function reviewSelectedFilesWithAi() {
-  const files = selectedReviewFiles.value;
-  if (!files.length) return;
-  aiReview.value = null;
-  aiReviewError.value = "";
-  aiReviewTarget.value = "selection";
-  const risks = files
-    .filter((file) => file.risk)
-    .map((file) => ({ path: file.path, labels: file.risk.labels || [] }));
-  const result = await new Promise((resolve) => {
-    emit("review-audit", { paths: files.map((file) => file.path), risks, diffScope: "combined" }, resolve);
-  });
+  if (requestId !== aiReviewRequestId || aiReviewTarget.value !== "rebase" || aiReviewRepoPath.value !== (props.config?.repoPath || "")) return;
   if (result?.ok) {
     aiReview.value = result.review || "AI 未返回审查内容。";
   } else {
@@ -1417,7 +1449,11 @@ async function ensureCommitMessage({ force = false } = {}) {
           <span class="checkmark" aria-hidden="true"></span>
           <span class="file-meta">
             <strong>{{ file.path }}</strong>
-            <small>{{ file.group }} · {{ file.status }}</small>
+            <small class="file-status-line">
+              <span>{{ file.group }}</span>
+              <span class="change-kind" :class="`change-${fileChangeKind(file)}`">{{ fileChangeLabel(file) }}</span>
+              <span class="status-code">{{ file.status }}</span>
+            </small>
             <span v-if="file.risk?.labels?.length" class="file-risk-tags">
               <em v-for="label in file.risk.labels" :key="`${file.path}:${label}`">{{ riskLabel(label) }}</em>
             </span>
@@ -1433,20 +1469,11 @@ async function ensureCommitMessage({ force = false } = {}) {
       </div>
 
       <div class="commit-actions">
-        <button class="btn secondary suggest" type="button" :disabled="suggestingMessage || !selectedPaths.length" @click="suggestMessage">{{ suggestingMessage ? '生成中...' : 'AI 生成说明' }}</button>
-        <button
-          class="ai-review-btn queue-review-btn"
-          :class="{ loading: busy === 'ai-audit-review' && aiReviewTarget === 'selection' }"
-          type="button"
-          :disabled="!canReviewSelectedFilesWithAi"
-          @click="reviewSelectedFilesWithAi"
-        >{{ busy === 'ai-audit-review' && aiReviewTarget === 'selection' ? 'AI 审查中...' : 'AI 审查所选' }}</button>
+        <button class="btn secondary suggest" type="button" :disabled="suggestingMessage || !selectedPaths.length" @click="suggestMessage">{{ suggestingMessage ? '生成中...' : 'AI 生成详细说明' }}</button>
         <button class="btn" type="button" :disabled="!canCommit" @click="runCommit">{{ labels.aiCommit }}</button>
         <button class="btn danger discard-selected" type="button" :disabled="Boolean(busy) || !selectedPaths.length" @click="confirmDiscardSelected">丢弃选中</button>
         <span class="disabled-reason">{{ commitBlockReason || "将按选中路径提交" }}</span>
       </div>
-      <pre v-if="aiReviewTarget === 'selection' && aiReview" class="ai-review-result selection-review-result">{{ aiReview }}</pre>
-      <p v-if="aiReviewTarget === 'selection' && aiReviewError" class="ai-review-error selection-review-error">{{ aiReviewError }}</p>
     </article>
 
     <aside class="action-card">
@@ -1547,7 +1574,7 @@ async function ensureCommitMessage({ force = false } = {}) {
         <div class="panel-head compact-head">
           <div>
             <h3>文件详细信息</h3>
-            <p class="muted">{{ detailQueueFile.group }} · {{ detailQueueFile.status }} · {{ topDirectory(detailQueueFile.path) }}</p>
+            <p class="muted">{{ fileStatusText(detailQueueFile) }} · {{ topDirectory(detailQueueFile.path) }}</p>
           </div>
           <button class="text-button" type="button" @click="closeFileDetailModal">关闭</button>
         </div>
@@ -1579,7 +1606,7 @@ async function ensureCommitMessage({ force = false } = {}) {
       <div class="table-head"><span>{{ labels.group }}</span><span>{{ labels.status }}</span><span>{{ labels.path }}</span></div>
       <div v-if="files.length">
         <div v-for="file in files" :key="`${file.group}:${file.status}:${file.path}`" class="file-row">
-          <span>{{ file.group }}</span><span>{{ file.status }}</span><code>{{ file.path }}</code>
+          <span>{{ file.group }}</span><span>{{ fileChangeLabel(file) }} · {{ file.status }}</span><code>{{ file.path }}</code>
         </div>
       </div>
       <div v-else class="empty-state">{{ labels.fileHint }}</div>

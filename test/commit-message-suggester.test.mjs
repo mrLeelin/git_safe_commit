@@ -35,11 +35,21 @@ test("suggestCommitMessage uses the selected installed AI CLI instead of remote 
   assert.match(commands[0].options.input, /diff --git/);
   assert.match(commands[0].options.input, /只分析这些已选择文件的 diff/);
   assert.match(commands[0].options.input, /先在内部完成分析/);
+  assert.match(commands[0].options.input, /触发场景/);
   assert.match(commands[0].options.input, /不要输出分析过程/);
   assert.match(commands[0].options.input, /按提交目的归并/);
   assert.match(commands[0].options.input, /不要按文件逐条罗列/);
+  assert.match(commands[0].options.input, /挑重点摘要/);
+  assert.match(commands[0].options.input, /用户\/流程可感知影响/);
+  assert.match(commands[0].options.input, /关键验证/);
   assert.match(commands[0].options.input, /优先说明用户可感知的行为变化/);
+  assert.match(commands[0].options.input, /续行说明关键影响/);
   assert.match(commands[0].options.input, /无法从 diff 判断目的时/);
+  assert.match(commands[0].options.input, /输出 2 到 4 行/);
+  assert.match(commands[0].options.input, /详细说明模式不允许只输出单行/);
+  assert.match(commands[0].options.input, /至少补充一条续行/);
+  assert.doesNotMatch(commands[0].options.input, /简单变更可以 1 行/);
+  assert.doesNotMatch(commands[0].options.input, /不要超过 8 行/);
   assert.match(commands[0].options.input, /\[FixBug\]/);
   assert.match(commands[0].options.input, /\[Feature\]/);
   assert.match(commands[0].options.input, /\[Assets\]/);
@@ -116,6 +126,45 @@ test("suggestCommitMessage includes selected untracked files in the AI diff", as
   assert.match(commands[0].options.input, /new file mode 100644/);
   assert.match(commands[0].options.input, /\+new note/);
   assert.match(commands[0].options.input, /\+second line/);
+});
+
+test("suggestCommitMessage gives AI the full selected file list when diffs are large", async () => {
+  const commands = [];
+  const selectedPaths = Array.from({ length: 10 }, (_, index) => `src/file-${index + 1}.js`);
+  const hugeFirstDiff = [
+    "diff --git a/src/file-1.js b/src/file-1.js",
+    ...Array.from({ length: 900 }, (_, index) => `+first file generated line ${index}`)
+  ].join("\n");
+  const remainingDiffs = selectedPaths.slice(1)
+    .map((filePath, index) => `diff --git a/${filePath} b/${filePath}\n+change ${index + 2}`)
+    .join("\n");
+
+  await suggestCommitMessage({
+    config: { repoPath: "C:\\repo", ai: { selected: "codex" } },
+    paths: selectedPaths,
+    detectInstalledAi: () => [{ id: "codex", label: "Codex", command: "codex", source: "codex" }],
+    runGit: async (_repoPath, args) => {
+      if (args[0] === "diff" && args[1] === "--cached") return { stdout: "" };
+      if (args[0] === "diff") return { stdout: `${hugeFirstDiff}\n${remainingDiffs}` };
+      if (args[0] === "ls-files") return { stdout: "" };
+      throw new Error(`unexpected git args: ${args.join(" ")}`);
+    },
+    runProcess: async (file, args, options) => {
+      commands.push({ file, args, options });
+      return {
+        ok: true,
+        stdout: "[Chore] -- 更新多文件维护变更\n        -- 覆盖 10 个已选择文件，不只说明第一个路径",
+        stderr: ""
+      };
+    }
+  });
+
+  assert.match(commands[0].options.input, /已选择文件列表 \(10 个\)/);
+  for (const filePath of selectedPaths) {
+    assert.match(commands[0].options.input, new RegExp(filePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(commands[0].options.input, /多文件选择时必须覆盖所有已选择路径/);
+  assert.match(commands[0].options.input, /不能只根据第一个 diff 块生成说明/);
 });
 
 test("suggestCommitMessage uses the Windows cmd shim for Codex extensionless npm shims", async () => {

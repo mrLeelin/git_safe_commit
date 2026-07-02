@@ -46,6 +46,34 @@ test("auditRepositoryState blocks staged paths outside the selected commit scope
   assert.ok(audit.riskFiles.find((file) => file.path === "config.json")?.labels.includes("private-config"));
 });
 
+test("auditRepositoryState blocks stale selected paths before git add", () => {
+  const audit = auditRepositoryState({
+    action: "commit",
+    selectedPaths: ["src/deleted-before-commit.js"],
+    status: {
+      staged: [],
+      unstaged: [{ status: "M", path: "src/app.js" }],
+      untracked: [],
+      unmerged: [],
+      conflictMarkers: [],
+      rebaseInProgress: false
+    },
+    summary: {
+      cleanWorktree: false,
+      blockers: [],
+      rebaseInProgress: false,
+      unmergedCount: 0
+    }
+  });
+
+  assert.equal(audit.verdict, "blocked");
+  assert.equal(audit.title, "选择已过期");
+  assert.deepEqual(
+    audit.findings.find((finding) => finding.code === "selected-paths-stale")?.paths,
+    ["src/deleted-before-commit.js"]
+  );
+});
+
 test("auditRepositoryState flags risky selected paths without blocking clean scope", () => {
   const audit = auditRepositoryState({
     action: "commit",
