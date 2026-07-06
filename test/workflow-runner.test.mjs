@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -529,6 +529,49 @@ test("workflow runner blocks push when remote advanced after the last inspect", 
   assert.match(result.message, /AI 同步后推送/);
   assert.match(result.message, /远端已有新提交/);
   assert.notEqual(git(repo, ["rev-parse", "HEAD"]).trim(), git(repo, ["rev-parse", "@{u}"]).trim());
+});
+
+test("workflow runner tells the browser to close rebase-target Excel before push sync", async () => {
+  const repo = await createRepo("gsc-push-excel-lock-runner-");
+  const remote = await mkdtemp(path.join(os.tmpdir(), "gsc-push-excel-lock-remote-"));
+  const other = await mkdtemp(path.join(os.tmpdir(), "gsc-push-excel-lock-other-"));
+  git(remote, ["init", "--bare", "-b", "main"]);
+  git(repo, ["remote", "add", "origin", remote]);
+  await writeFile(path.join(repo, "Config.xlsx"), "base\n", "utf8");
+  git(repo, ["add", "Config.xlsx"]);
+  git(repo, ["commit", "-m", "add table"]);
+  git(repo, ["push", "-u", "origin", "main"]);
+  git(other, ["clone", remote, "."]);
+  git(other, ["config", "user.email", "remote@example.test"]);
+  git(other, ["config", "user.name", "Remote Test"]);
+  await writeFile(path.join(repo, "local.txt"), "local\n", "utf8");
+  git(repo, ["add", "local.txt"]);
+  git(repo, ["commit", "-m", "local push change"]);
+  await writeFile(path.join(other, "Config.xlsx"), "remote\n", "utf8");
+  git(other, ["add", "Config.xlsx"]);
+  git(other, ["commit", "-m", "remote table change"]);
+  git(other, ["push"]);
+  await chmod(path.join(repo, "Config.xlsx"), 0o444);
+
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  const result = await runner.run("push", { confirmed: true });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.blocked, true);
+  assert.equal(result.reason, "excel workbook must be closed before rebase");
+  assert.equal(result.recommendedAction, "close-excel-and-retry");
+  assert.match(result.message, /Config\.xlsx/);
+  assert.match(result.message, /关闭/);
+  assert.equal(result.summary.openExcelCount, 1);
+  assert.equal(result.summary.rebaseTargetExcelCount, 1);
+  assert.equal(git(repo, ["rev-parse", "HEAD"]).trim(), result.status.head);
 });
 
 test("workflow runner syncs and pushes from the single AI push recovery action", async () => {

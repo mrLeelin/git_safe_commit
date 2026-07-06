@@ -273,6 +273,9 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(app, /repositoryChangingActions\.has\(action\)/);
   assert.match(app, /"discard-selected"/);
   assert.match(app, /async function refreshRepositoryView/);
+  assert.match(app, /isExcelCloseRequiredFailure\(error\)/);
+  assert.match(app, /close-excel-and-retry/);
+  assert.match(app, /window\.alert\(message\)/);
   assert.match(app, /await refreshRepositoryView\(\{ inspect: true \}\)/);
   assert.match(app, /catch \(error\)[\s\S]*refreshRepositoryView\(\{ inspect: true \}\)/);
   assert.match(workflowView, /const rebaseInProgress = computed/);

@@ -65,6 +65,8 @@ test("summarizeGitState does not block whitespace-only diff check failures", () 
     unmerged: [],
     conflictMarkers: [],
     rebaseInProgress: false,
+    excel: { files: [] },
+    rebaseTarget: { paths: [], excelPaths: [], highRiskPaths: [] },
     checks: {
       unstaged: {
         ok: false,
@@ -75,4 +77,40 @@ test("summarizeGitState does not block whitespace-only diff check failures", () 
   });
 
   assert.deepEqual(summary.blockers, []);
+});
+
+test("summarizeGitState blocks rebase target Excel files that cannot be opened exclusively", () => {
+  const summary = summarizeGitState({
+    branch: "main",
+    upstream: "origin/main",
+    ahead: 1,
+    behind: 1,
+    staged: [],
+    unstaged: [],
+    untracked: [],
+    unmerged: [],
+    conflictMarkers: [],
+    rebaseInProgress: false,
+    excel: {
+      files: [{
+        path: "Tables/Config.xlsx",
+        reasons: ["rebase-target"],
+        lockedExclusive: true,
+        openInExcel: false
+      }]
+    },
+    rebaseTarget: {
+      paths: ["Tables/Config.xlsx"],
+      excelPaths: ["Tables/Config.xlsx"],
+      highRiskPaths: ["Tables/Config.xlsx"]
+    },
+    checks: {
+      unstaged: { ok: true, stdout: "" },
+      staged: { ok: true, stdout: "" }
+    }
+  });
+
+  assert.equal(summary.openExcelCount, 1);
+  assert.equal(summary.rebaseTargetExcelCount, 1);
+  assert.deepEqual(summary.blockers, ["请先关闭即将被 rebase 覆盖的 Excel 文件再继续: Tables/Config.xlsx"]);
 });

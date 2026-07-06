@@ -388,6 +388,16 @@ function showOperationNotice(action, result = {}) {
 }
 
 function showOperationFailureNotice(action, error = {}) {
+  if (isExcelCloseRequiredFailure(error)) {
+    const message = error.data?.message || error.message || "请先关闭被占用的 Excel 表格，然后再继续 rebase 或推送。";
+    operationNotice.value = {
+      tone: "warning",
+      title: "请先关闭表格",
+      message
+    };
+    window.alert(message);
+    return;
+  }
   if (isRemoteAdvancedPushFailure(error)) {
     operationNotice.value = {
       tone: "warning",
@@ -399,6 +409,12 @@ function showOperationFailureNotice(action, error = {}) {
   }
   const notice = explainFailure(action, error);
   if (notice) operationNotice.value = notice;
+}
+
+function isExcelCloseRequiredFailure(error = {}) {
+  return error.data?.recommendedAction === "close-excel-and-retry"
+    || error.data?.reason === "excel workbook must be closed before rebase"
+    || /请先关闭.*Excel|close Excel workbook/i.test(String(error.message || ""));
 }
 
 function isRemoteAdvancedPushFailure(error = {}) {
