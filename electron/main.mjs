@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog } from "electron";
 import path from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,7 +21,8 @@ let backendServer = null;
 
 async function startBackend() {
   // 动态导入 server.mjs（它在项目根目录）
-  const { createApp } = await import(path.join(__dirname, "..", "server.mjs"));
+  const serverPath = pathToFileURL(path.join(__dirname, "..", "server.mjs")).href;
+  const { createApp } = await import(serverPath);
   // port = 0 → 系统自动分配端口
   const result = await createApp(undefined, 0);
   backendServer = result.server;
