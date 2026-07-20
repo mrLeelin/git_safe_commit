@@ -13,6 +13,8 @@ if (!existsSync(configDir)) {
   mkdirSync(configDir, { recursive: true });
 }
 
+// Electron 环境下强制使用生产模式（使用 dist/ 静态文件，不启动 Vite 开发服务器）
+process.env.NODE_ENV = "production";
 // 设置环境变量，让 config.mjs 的 defaultConfigPath() 能找到 AppData 路径
 process.env.GIT_SAFE_COMMIT_CONFIG = path.join(configDir, "config.json");
 
