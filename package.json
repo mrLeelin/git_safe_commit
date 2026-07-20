@@ -3,11 +3,14 @@
   "version": "0.1.13",
   "private": true,
   "type": "module",
+  "main": "electron/main.mjs",
   "scripts": {
     "dev": "node server.mjs",
     "build": "vite build",
     "preview": "node server.mjs",
     "start": "node server.mjs",
+    "electron:dev": "electron .",
+    "package": "vite build && electron-builder --win portable",
     "test": "node --test"
   },
   "dependencies": {
