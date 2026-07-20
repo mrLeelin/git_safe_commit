@@ -9,6 +9,7 @@ win:
     - target: portable
       arch:
         - x64
+  sign: false
 
 portable:
   artifactName: "git-safe-commit-${version}.exe"
