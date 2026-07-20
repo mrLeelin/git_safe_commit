@@ -1,0 +1,16 @@
+appId: com.git-safe-commit-tool
+productName: Git Safe Commit Tool
+
+directories:
+  output: release
+
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+
+portable:
+  artifactName: "git-safe-commit-${version}.exe"
+
+asar: true
