@@ -10,7 +10,7 @@
     "preview": "node server.mjs",
     "start": "node server.mjs",
     "electron:dev": "electron .",
-    "package": "vite build && electron-builder --win portable",
+    "package": "vite build && @electron/packager . GitSafeCommitTool --platform=win32 --arch=x64 --out=release --overwrite",
     "test": "node --test"
   },
   "dependencies": {
@@ -25,6 +25,7 @@
     "node": ">=18"
   },
   "devDependencies": {
+    "@electron/packager": "^20.0.3",
     "electron": "^33.4.11",
     "electron-builder": "^25.1.8"
   }
