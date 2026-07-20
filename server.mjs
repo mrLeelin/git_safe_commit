@@ -24,6 +24,7 @@ import { pickFolder } from "./lib/folder-picker.mjs";
 import { pathInsideRepo, runGit } from "./lib/git-executor.mjs";
 import { getGitGraph, getCommitDetail } from "./lib/git-graph.mjs";
 import { createWorkflowRunner } from "./lib/workflow-runner.mjs";
+import { initLogger } from "./lib/logger.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const toolRoot = path.dirname(__filename);
@@ -38,6 +39,10 @@ const sessionLogs = [];
 export async function createApp(customConfig, userPort) {
   const cfg = customConfig || await loadConfig(configPath, { allowMissing: true });
   config = cfg;
+  initLogger({
+    directory: config.log?.directory || path.join(config.repoPath, ".git", "git-safe-commit-tool-logs"),
+    level: config.log?.level || "info"
+  });
   runner = createRunner(cfg);
 
   const app = express();
@@ -48,6 +53,32 @@ export async function createApp(customConfig, userPort) {
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, tool: "git-safe-commit-tool", version: toolVersion, repoPath: config.repoPath });
+});
+
+app.get("/api/logs", async (_req, res, next) => {
+  try {
+    const { getLogger } = await import("./lib/logger.mjs");
+    const logger = getLogger();
+    const files = await logger.listFiles();
+    const sorted = files.sort((a, b) => b.name.localeCompare(a.name));
+    res.json({ ok: true, files: sorted.map((f) => ({ name: f.name })) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/logs/download/:fileName", async (req, res, next) => {
+  try {
+    const { getLogger } = await import("./lib/logger.mjs");
+    const logger = getLogger();
+    const files = await logger.listFiles();
+    const file = files.find((f) => f.name === req.params.fileName);
+    if (!file) { res.status(404).json({ ok: false, error: "file not found" }); return; }
+    const { readFile } = await import("node:fs/promises");
+    res.type("text/plain").send(await readFile(file.path, "utf8"));
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/config", (_req, res) => {
