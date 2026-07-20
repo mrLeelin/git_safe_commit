@@ -30,14 +30,21 @@ const toolRoot = path.dirname(__filename);
 const packageInfo = JSON.parse(await readFile(path.join(toolRoot, "package.json"), "utf8"));
 const toolVersion = packageInfo.version || "0.0.0";
 const configPath = defaultConfigPath();
-let config = await loadConfig(configPath, { allowMissing: true });
+let config = null;
+let runner = null;
 const eventClients = new Set();
 const sessionLogs = [];
-let runner = createRunner(config);
 
-const app = express();
-app.disable("x-powered-by");
-app.use(express.json({ limit: "1mb" }));
+export async function createApp(customConfig, userPort) {
+  const cfg = customConfig || await loadConfig(configPath, { allowMissing: true });
+  config = cfg;
+  runner = createRunner(cfg);
+
+  const app = express();
+  app.disable("x-powered-by");
+  app.use(express.json({ limit: "1mb" }));
+
+  // 使用指定端口，或配置端口，或 0（自动分配）
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, tool: "git-safe-commit-tool", version: toolVersion, repoPath: config.repoPath });
@@ -300,18 +307,32 @@ app.use((error, _req, res, _next) => {
   });
 });
 
-const server = app.listen(config.server.port, config.server.host, () => {
-  const url = `http://${config.server.host}:${config.server.port}`;
-  console.log(`git-safe-commit-tool listening at ${url}`);
-  console.log(`repo: ${config.repoPath}`);
-});
-const eventServer = new WebSocketServer({ server, path: "/api/events" });
-eventServer.on("connection", (socket) => {
-  eventClients.add(socket);
-  writeEvent(socket, "state", { state: runner.state, logs: sessionLogs.slice(-200) });
-  socket.on("close", () => eventClients.delete(socket));
-  socket.on("error", () => eventClients.delete(socket));
-});
+  const listenPort = userPort !== undefined ? userPort : (cfg.server.port || 0);
+  const server = app.listen(listenPort, "127.0.0.1");
+  await new Promise((resolve) => server.once("listening", resolve));
+  const port = server.address().port;
+  console.log(`git-safe-commit-tool listening at http://127.0.0.1:${port}`);
+  console.log(`repo: ${cfg.repoPath}`);
+
+  const eventServer = new WebSocketServer({ server, path: "/api/events" });
+  eventServer.on("connection", (socket) => {
+    eventClients.add(socket);
+    writeEvent(socket, "state", { state: runner.state, logs: sessionLogs.slice(-200) });
+    socket.on("close", () => eventClients.delete(socket));
+    socket.on("error", () => eventClients.delete(socket));
+  });
+
+  return { app, server, port, eventServer };
+}
+
+// 保持直接运行 server.mjs 的兼容性（npm start / npm run dev）
+const isDirectRun = process.argv[1] && (
+  process.argv[1].replace(/\\/g, "/").includes("server.mjs")
+  || process.argv[1].replace(/\\/g, "/").includes("server")
+);
+if (isDirectRun) {
+  const { port } = await createApp();
+}
 
 function createRunner(nextConfig) {
   return createWorkflowRunner({
