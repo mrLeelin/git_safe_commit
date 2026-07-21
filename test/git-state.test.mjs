@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { collectGitState, parseShortStatus, summarizeGitState } from "../lib/git-state.mjs";
+import { collectGitState, mergeUntrackedPaths, parseShortStatus, summarizeGitState } from "../lib/git-state.mjs";
 
 function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
@@ -30,10 +30,20 @@ test("collectGitState reports branch and dirty paths", async () => {
   const state = await collectGitState(repo);
 
   assert.equal(state.branch, "main");
+  assert.deepEqual(state.branches, ["main"]);
   assert.equal(state.cleanWorktree, false);
   assert.deepEqual(state.unstaged.map((item) => item.path), ["tracked.txt"]);
   assert.deepEqual(state.untracked, ["new.txt"]);
   assert.equal(state.unmerged.length, 0);
+});
+
+test("mergeUntrackedPaths ignores stale collapsed status directories when ls-files succeeds", () => {
+  assert.deepEqual(mergeUntrackedPaths({ ok: true, stdout: "" }, [".omc/"]), []);
+  assert.deepEqual(mergeUntrackedPaths({ ok: true, stdout: "real.txt\n" }, ["stale-dir/"]), ["real.txt"]);
+});
+
+test("mergeUntrackedPaths falls back to short status when ls-files fails", () => {
+  assert.deepEqual(mergeUntrackedPaths({ ok: false, stdout: "" }, ["fallback-dir/"]), ["fallback-dir/"]);
 });
 
 test("parseShortStatus reports paths that only appear in git status", () => {

@@ -47,6 +47,8 @@ const fileDiffPreview = ref(null);
 const fileDiffLoading = ref(false);
 const fileDiffError = ref("");
 const confirmAction = ref(null);
+const mergeBranchName = ref("");
+const mergeBranchMenuOpen = ref(false);
 const activeConflictPath = ref("");
 const textConflict = ref(null);
 const textCandidate = ref("");
@@ -84,6 +86,17 @@ const workbenchActive = computed(() => Boolean(activeConflictPath.value));
 const selectedFileCount = computed(() => selectedPaths.value.length);
 const selectedFilesLabel = computed(() => `${selectedFileCount.value} / ${props.selectableFiles.length}`);
 const changedCount = computed(() => props.files.length);
+const mergeBranchOptions = computed(() => {
+  const currentBranch = String(props.summary?.branch || "").trim();
+  return (props.summary?.branches || props.status?.branches || [])
+    .filter((branch) => branch && branch !== currentBranch)
+    .sort((left, right) => left.localeCompare(right));
+});
+const filteredMergeBranchOptions = computed(() => {
+  const query = mergeBranchName.value.trim().toLowerCase();
+  if (!query) return mergeBranchOptions.value;
+  return mergeBranchOptions.value.filter((branch) => branch.toLowerCase().includes(query));
+});
 const auditTone = computed(() => {
   if (props.audit?.verdict === "blocked") return "bad";
   if (props.audit?.verdict === "needs_confirmation") return "warn";
@@ -509,6 +522,28 @@ function runRemoteAction() {
 
 function confirmAbortRebase() {
   confirmAction.value = "abort-rebase";
+}
+
+function runMerge() {
+  const branch = mergeBranchName.value.trim();
+  if (!branch || props.busy) return;
+  mergeBranchMenuOpen.value = false;
+  emit("action", "merge", { branch, confirmed: true });
+}
+
+function openMergeBranchMenu() {
+  if (!props.busy) mergeBranchMenuOpen.value = true;
+}
+
+function selectMergeBranch(branch) {
+  mergeBranchName.value = branch;
+  mergeBranchMenuOpen.value = false;
+}
+
+function closeMergeBranchMenu() {
+  window.setTimeout(() => {
+    mergeBranchMenuOpen.value = false;
+  }, 120);
 }
 
 function confirmDiscardSelected() {
@@ -1476,6 +1511,7 @@ async function ensureCommitMessage({ force = false } = {}) {
       </div>
     </article>
 
+    <div class="action-rail">
     <aside class="action-card">
       <h3>{{ labels.next }}</h3>
       <p class="next-copy">{{ nextStep }}</p>
@@ -1566,6 +1602,42 @@ async function ensureCommitMessage({ force = false } = {}) {
         <pre>{{ recovery ? JSON.stringify(recovery, null, 2) : labels.noRecovery }}</pre>
       </div>
     </aside>
+
+    <aside class="action-card merge-card">
+      <h3>分支合并</h3>
+      <p class="next-copy">将指定源分支合并到当前分支。</p>
+      <div class="merge-branch-flow" aria-label="Merge 分支方向">
+        <div class="merge-branch-role current">
+          <span class="merge-role-label">当前分支</span>
+          <strong>{{ summary?.branch || "未检查" }}</strong>
+          <small>合并目标</small>
+        </div>
+        <span class="merge-flow-arrow" aria-hidden="true">←</span>
+        <div class="merge-branch-role source">
+          <span class="merge-role-label">源分支</span>
+          <strong>{{ mergeBranchName || "请选择" }}</strong>
+          <small>待合入</small>
+        </div>
+      </div>
+      <label class="merge-label" for="merge-source-branch">选择源分支</label>
+      <div class="merge-action">
+        <div class="merge-branch-picker">
+          <input id="merge-source-branch" v-model="mergeBranchName" class="text-input" type="search" role="combobox" autocomplete="off" aria-autocomplete="list" :aria-expanded="mergeBranchMenuOpen" placeholder="搜索或输入分支名" :disabled="Boolean(busy)" @focus="openMergeBranchMenu" @input="openMergeBranchMenu" @blur="closeMergeBranchMenu">
+          <div v-if="mergeBranchMenuOpen" class="merge-branch-menu" role="listbox">
+            <button v-for="branch in filteredMergeBranchOptions" :key="branch" class="merge-branch-option" type="button" role="option" @mousedown.prevent="selectMergeBranch(branch)">
+              {{ branch }}
+            </button>
+            <span v-if="!filteredMergeBranchOptions.length" class="merge-branch-empty">没有匹配的本地分支，可继续输入后尝试合并。</span>
+          </div>
+        </div>
+        <button class="btn merge-submit-btn" type="button" :disabled="Boolean(busy) || !mergeBranchName.trim()" @click="runMerge">
+          <span aria-hidden="true">⇢</span>
+          <strong>执行 Merge</strong>
+        </button>
+      </div>
+      <span class="disabled-reason">要求当前工作区干净；发生冲突后请在冲突工作台处理。</span>
+    </aside>
+    </div>
   </section>
 
   <teleport to="body">
