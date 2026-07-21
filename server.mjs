@@ -1,8 +1,8 @@
 import express from "express";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { createReadStream, existsSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 
@@ -24,7 +24,7 @@ import { pickFolder } from "./lib/folder-picker.mjs";
 import { pathInsideRepo, runGit } from "./lib/git-executor.mjs";
 import { getGitGraph, getCommitDetail } from "./lib/git-graph.mjs";
 import { createWorkflowRunner } from "./lib/workflow-runner.mjs";
-import { initLogger } from "./lib/logger.mjs";
+import { getLogger, initLogger, resolveLogDirectory } from "./lib/logger.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const toolRoot = path.dirname(__filename);
@@ -39,8 +39,8 @@ const sessionLogs = [];
 export async function createApp(customConfig, userPort) {
   const cfg = customConfig || await loadConfig(configPath, { allowMissing: true });
   config = cfg;
-  initLogger({
-    directory: config.log?.directory || path.join(config.repoPath, ".git", "git-safe-commit-tool-logs"),
+  await initLogger({
+    directory: resolveLogDirectory(config.repoPath, config.log?.directory),
     level: config.log?.level || "info"
   });
   runner = createRunner(cfg);
@@ -51,13 +51,20 @@ export async function createApp(customConfig, userPort) {
 
   // 使用指定端口，或配置端口，或 0（自动分配）
 
+function allowLogApi(res) {
+  const host = String(config.server?.host || "").toLowerCase();
+  if (["127.0.0.1", "::1", "[::1]", "localhost"].includes(host)) return true;
+  res.status(403).json({ ok: false, error: "log API is available only on a loopback-bound server" });
+  return false;
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, tool: "git-safe-commit-tool", version: toolVersion, repoPath: config.repoPath });
 });
 
 app.get("/api/logs", async (_req, res, next) => {
   try {
-    const { getLogger } = await import("./lib/logger.mjs");
+    if (!allowLogApi(res)) return;
     const logger = getLogger();
     const files = await logger.listFiles();
     const sorted = files.sort((a, b) => b.name.localeCompare(a.name));
@@ -69,13 +76,21 @@ app.get("/api/logs", async (_req, res, next) => {
 
 app.get("/api/logs/download/:fileName", async (req, res, next) => {
   try {
-    const { getLogger } = await import("./lib/logger.mjs");
+    if (!allowLogApi(res)) return;
     const logger = getLogger();
     const files = await logger.listFiles();
     const file = files.find((f) => f.name === req.params.fileName);
     if (!file) { res.status(404).json({ ok: false, error: "file not found" }); return; }
-    const { readFile } = await import("node:fs/promises");
-    res.type("text/plain").send(await readFile(file.path, "utf8"));
+    const metadata = await stat(file.path);
+    if (!metadata.isFile()) { res.status(404).json({ ok: false, error: "file not found" }); return; }
+    if (metadata.size > 10 * 1024 * 1024) {
+      res.status(413).json({ ok: false, error: "log file exceeds the 10 MB download limit" });
+      return;
+    }
+    res.type("text/plain");
+    createReadStream(file.path)
+      .on("error", (error) => res.headersSent ? res.destroy(error) : next(error))
+      .pipe(res);
   } catch (error) {
     next(error);
   }
@@ -96,6 +111,10 @@ app.get("/api/ai/installations", (_req, res) => {
 app.post("/api/config", async (req, res, next) => {
   try {
     config = await saveConfig(req.body.config || req.body, configPath, { currentConfig: config });
+    await initLogger({
+      directory: resolveLogDirectory(config.repoPath, config.log?.directory),
+      level: config.log?.level || "info"
+    });
     runner = createRunner(config);
     appendLog("config-saved", { repoPath: config.repoPath, selectedAi: config.ai.selected });
     broadcast("state", { state: runner.state, logs: sessionLogs.slice(-200) });
@@ -353,6 +372,7 @@ app.use((error, _req, res, _next) => {
     socket.on("error", () => eventClients.delete(socket));
   });
 
+  server.once("close", () => { void getLogger()?.close(); });
   return { app, server, port, eventServer };
 }
 
@@ -361,8 +381,31 @@ const isDirectRun = process.argv[1] && (
   process.argv[1].replace(/\\/g, "/").includes("server.mjs")
   || process.argv[1].replace(/\\/g, "/").includes("server")
 );
-if (isDirectRun) {
-  const { port } = await createApp();
+let directRuntime = null;
+if (isDirectRun) directRuntime = await createApp();
+
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`received ${signal}; flushing logs before shutdown`);
+  for (const socket of eventClients) socket.terminate();
+  if (directRuntime) {
+    await new Promise((resolve) => directRuntime.eventServer.close(resolve));
+    await new Promise((resolve) => directRuntime.server.close(resolve));
+  }
+  await getLogger()?.close();
+}
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => {
+    shutdown(signal)
+      .then(() => process.exit(0))
+      .catch((error) => {
+        console.error(`shutdown failed: ${error.message}`);
+        process.exit(1);
+      });
+  });
 }
 
 function createRunner(nextConfig) {

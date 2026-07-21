@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import process from "node:process";
 import test from "node:test";
 
-import { normalizeGitArgs, runProcess, validateGitArgs, validateRepoPath } from "../lib/git-executor.mjs";
+import { normalizeGitArgs, runGit, runProcess, summarizeGitInvocation, validateGitArgs, validateRepoPath } from "../lib/git-executor.mjs";
+import { initLogger, runWithTraceId } from "../lib/logger.mjs";
 
 test("validateGitArgs rejects destructive git commands", () => {
   const forbidden = [
@@ -47,6 +51,13 @@ test("validateRepoPath requires absolute paths", () => {
   assert.throws(() => validateRepoPath("relative/path"), /absolute/i);
 });
 
+test("git log summaries never include argument values", () => {
+  const summary = summarizeGitInvocation(["commit", "-m", "private release token"]);
+
+  assert.deepEqual(summary, { command: "git commit", argCount: 2 });
+  assert.doesNotMatch(JSON.stringify(summary), /private release token/);
+});
+
 test("runProcess can pass input through stdin", async () => {
   const result = await runProcess(process.execPath, ["-e", "process.stdin.pipe(process.stdout)"], {
     input: "hello from stdin"
@@ -66,4 +77,18 @@ test("runProcess can resolve after stdout becomes idle", async () => {
   assert.equal(result.ok, true);
   assert.equal(result.stdout.trim(), "ready");
   assert.ok(Date.now() - started < 1000);
+});
+
+test("runGit inherits the active trace context", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "git-trace-"));
+  const logDirectory = path.join(cwd, ".git-safe-logs");
+  const logger = await initLogger({ directory: logDirectory, level: "debug" });
+
+  await runWithTraceId("trace-git", async () => runGit(cwd, ["status", "--short"]));
+  await logger.flush();
+
+  const file = (await logger.listFiles()).find((entry) => entry.name.startsWith("operations-"));
+  assert.ok(file);
+  assert.match(await readFile(file.path, "utf8"), /\[trace-git\]/);
+  await logger.close();
 });
