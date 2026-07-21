@@ -1,6 +1,6 @@
 {
   "name": "git-safe-commit-tool",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "private": true,
   "type": "module",
   "main": "electron/main.mjs",
@@ -10,23 +10,22 @@
     "preview": "node server.mjs",
     "start": "node server.mjs",
     "electron:dev": "electron .",
-    "package": "vite build && @electron/packager . GitSafeCommitTool --platform=win32 --arch=x64 --out=release --overwrite",
+    "package": "vite build && electron-builder --win nsis",
     "test": "node --test"
   },
   "dependencies": {
-    "@vitejs/plugin-vue": "^6.0.3",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
-    "vite": "^7.2.7",
-    "vue": "^3.5.26",
     "ws": "^8.21.0"
   },
   "engines": {
     "node": ">=18"
   },
   "devDependencies": {
-    "@electron/packager": "^20.0.3",
     "electron": "^33.4.11",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^25.1.8",
+    "@vitejs/plugin-vue": "^6.0.3",
+    "vite": "^7.2.7",
+    "vue": "^3.5.26"
   }
 }

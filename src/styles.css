@@ -675,6 +675,111 @@ h3 { font-size: 15px; margin-bottom: 10px; }
   margin-top: 10px;
   line-height: 1.5;
 }
+.create-branch-card {
+  border-left: 3px solid #38bdf8;
+  background: var(--panel);
+}
+.create-branch-card h3 {
+  margin-bottom: 4px;
+}
+.create-branch-current {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 9px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--soft);
+}
+.create-branch-current span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+.create-branch-current strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.create-branch-action {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.create-branch-picker {
+  position: relative;
+}
+.create-branch-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, .22);
+}
+.create-branch-option {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.create-branch-option:hover,
+.create-branch-option:focus-visible {
+  background: var(--soft);
+  outline: none;
+}
+.create-branch-empty {
+  display: block;
+  padding: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.create-branch-action .text-input,
+.create-branch-action .btn {
+  width: 100%;
+  min-height: 42px;
+}
+.create-branch-btn {
+  border-color: #0284c7;
+  background: #0ea5e9;
+  color: #062238;
+  box-shadow: 0 8px 16px rgba(14, 165, 233, .2);
+}
+.create-branch-btn:hover:not(:disabled),
+.create-branch-btn:focus-visible:not(:disabled) {
+  border-color: #0369a1;
+  background: #38bdf8;
+  box-shadow: 0 10px 20px rgba(14, 165, 233, .28);
+  transform: translateY(-1px);
+}
+.create-branch-btn > span {
+  font-size: 18px;
+  line-height: 1;
+}
+.create-branch-btn:disabled {
+  border-color: var(--line-strong);
+  background: var(--soft);
+  color: var(--muted);
+  box-shadow: none;
+}
 .file-preview-meta {
   display: grid;
   gap: 4px;
@@ -707,6 +812,18 @@ h3 { font-size: 15px; margin-bottom: 10px; }
   color: var(--blue);
   font-weight: 900;
 }
+.merge-pending-notice {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 12px;
+}
+.merge-pending-notice strong { font-size: 13px; }
 .commit-message label {
   display: grid;
   gap: 7px;
@@ -2328,6 +2445,65 @@ textarea {
   align-items: start;
   gap: 10px;
 }
+.workbench-error-panel {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid #f59e0b;
+  border-left: 4px solid #ef4444;
+  border-radius: 10px;
+  background: #fff8e7;
+  color: #713f12;
+}
+.workbench-error-icon {
+  display: grid;
+  flex: 0 0 26px;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: #fff;
+  font-weight: 900;
+}
+.workbench-error-panel h3 {
+  margin: 0 0 5px;
+  color: #7f1d1d;
+}
+.workbench-error-panel p,
+.workbench-error-panel small {
+  display: block;
+  line-height: 1.55;
+}
+.workbench-error-panel p {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+.table-auto-merge-banner {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid #22c55e;
+  border-radius: 10px;
+  background: #effdf4;
+  color: #166534;
+}
+.table-auto-merge-banner strong,
+.table-auto-merge-banner span:last-child {
+  display: block;
+}
+.table-auto-merge-banner span:last-child {
+  margin-top: 3px;
+  color: #3f6f50;
+  font-size: 12px;
+}
+.workbench-fallback-btn {
+  margin-top: 12px;
+}
 .candidate-result {
   flex: 1 1 420px;
   display: grid;
@@ -3111,6 +3287,54 @@ textarea {
   border-left-color: #f59e0b;
   background: #111c2c;
 }
+.theme-dark .workbench-error-panel {
+  border-color: #b45309;
+  background: #2b2415;
+  color: #fde68a;
+}
+.theme-dark .workbench-error-panel h3 {
+  color: #fca5a5;
+}
+.theme-dark .table-auto-merge-banner {
+  border-color: #22c55e;
+  background: #102a1b;
+  color: #bbf7d0;
+}
+.theme-dark .table-auto-merge-banner span:last-child {
+  color: #86efac;
+}
+.theme-dark .create-branch-card {
+  border-left-color: #38bdf8;
+  background: #111c2c;
+}
+.theme-dark .create-branch-current {
+  border-color: #43556e;
+  background: #162337;
+}
+.theme-dark .create-branch-current strong {
+  color: #f8fafc;
+}
+.theme-dark .create-branch-menu {
+  border-color: #43556e;
+  background: #0f1928;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, .35);
+}
+.theme-dark .create-branch-option {
+  color: #e5edf7;
+}
+.theme-dark .create-branch-option:hover,
+.theme-dark .create-branch-option:focus-visible {
+  background: #1e3a5f;
+}
+.theme-dark .create-branch-btn {
+  border-color: #38bdf8;
+  background: #0ea5e9;
+  color: #042235;
+}
+.theme-dark .create-branch-btn:hover:not(:disabled),
+.theme-dark .create-branch-btn:focus-visible:not(:disabled) {
+  background: #38bdf8;
+}
 .theme-dark .merge-branch-menu {
   border-color: #43556e;
   background: #0f1928;
@@ -3161,6 +3385,11 @@ textarea {
 }
 .theme-dark .commit-message label {
   color: #93a4b7;
+}
+.theme-dark .merge-pending-notice {
+  border-color: #b45309;
+  background: #422006;
+  color: #fde68a;
 }
 .theme-dark textarea,
 .theme-dark .commit-card input {

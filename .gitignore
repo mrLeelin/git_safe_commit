@@ -3,6 +3,8 @@ config.json
 node_modules/
 dist/
 output/
+release/
+release-measured/
 .playwright-cli/
 __pycache__/
 *.pyc

@@ -160,6 +160,19 @@ test("buildTableMerge lets callers force a key column when auto alignment is too
   assert.equal(betaCells.find((cell) => cell.column === 2).kind, "auto-ours");
 });
 
+test("buildTableMerge allows a manually selected repeated key column", () => {
+  const base = "id,group\n1,A\n2,A\n";
+  const ours = "id,group\n1,A\n2,A\n3,B\n";
+  const theirs = "id,group\n1,A\n2,A\n";
+
+  const result = buildTableMerge(base, ours, theirs, { alignment: "key", keyColumn: 1 });
+
+  assert.equal(result.keyCandidates.some((candidate) => candidate.column === 1), false);
+  assert.equal(result.rowAlignment, "manual-key");
+  assert.equal(result.keyColumn, 1);
+  assert.equal(result.rowCount, 4);
+});
+
 test("composeTableDraft writes table BOTH as a new row by default", () => {
   const base = "id,name\n1,Alice\n";
   const ours = "id,name\n1,Alicia\n";

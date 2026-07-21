@@ -284,6 +284,11 @@ test("Vue UI keeps Chinese Git-safe commit-first workbench structure", async () 
   assert.match(workflowView, /class="[^"]*conflict-box/);
   assert.match(workflowView, /function openTextWorkbench\(path\)/);
   assert.match(workflowView, /function openTableWorkbench\(path\)/);
+  assert.doesNotMatch(workflowView, /autoResolveTableConflict/);
+  assert.match(workflowView, /Merge 待提交/);
+  assert.match(workflowView, /mergeCommitMessage/);
+  assert.match(workflowView, /v-if="!mergeInProgress"/);
+  assert.match(app, /Merge 已提交/);
   assert.match(workflowView, /function openBinaryWorkbench\(path\)/);
   assert.match(workflowView, /prefab\|asset\|meta/);
   assert.match(workflowView, /csv\|tsv\|xlsx/);

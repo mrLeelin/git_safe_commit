@@ -136,6 +136,16 @@ test("resolveLogDirectory keeps logging inside the dedicated repository log root
   );
 });
 
+test("resolveLogDirectory uses the portable exe log root by project name", async () => {
+  const repo = await mkdtemp(path.join(os.tmpdir(), "logger-portable-project-"));
+  const portableRoot = path.join(await mkdtemp(path.join(os.tmpdir(), "logger-portable-root-")), "log");
+
+  assert.equal(
+    resolveLogDirectory(repo, "", portableRoot),
+    path.join(path.resolve(portableRoot), path.basename(repo))
+  );
+});
+
 test("trace context remains isolated across concurrent asynchronous operations", async () => {
   const seen = await Promise.all([
     runWithTraceId("trace-a", async () => {

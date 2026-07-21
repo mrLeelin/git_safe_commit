@@ -5,11 +5,69 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createWorkflowRunner } from "../lib/workflow-runner.mjs";
+import { canContinueRebase, canProceedWithoutNewStash, createWorkflowRunner, resolveCreatedStashSha } from "../lib/workflow-runner.mjs";
+import { validateGitArgs } from "../lib/git-executor.mjs";
 
 function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
 }
+
+test("stash sync refuses to reuse an existing stash when push saved nothing", () => {
+  assert.equal(
+    resolveCreatedStashSha({
+      stashResult: { ok: true, stdout: "No local changes to save", stderr: "" },
+      previousSha: "old-stash-sha",
+      currentSha: "old-stash-sha"
+    }),
+    ""
+  );
+});
+
+test("stash sync can proceed when the only remaining untracked entries are empty directories", () => {
+  assert.equal(
+    canProceedWithoutNewStash({
+      stashResult: { ok: true, stdout: "No local changes to save", stderr: "" },
+      previousSha: "old-stash-sha",
+      currentSha: "old-stash-sha",
+      status: "?? empty-directory/\n?? another-empty-directory/\n",
+      untrackedFiles: ""
+    }),
+    true
+  );
+  assert.equal(
+    canProceedWithoutNewStash({
+      stashResult: { ok: true, stdout: "No local changes to save", stderr: "" },
+      previousSha: "old-stash-sha",
+      currentSha: "old-stash-sha",
+      status: "?? real-file.txt\n",
+      untrackedFiles: "real-file.txt\0"
+    }),
+    false
+  );
+});
+
+test("stash sync rejects a collapsed untracked directory when Git reports files inside it", () => {
+  assert.equal(
+    canProceedWithoutNewStash({
+      stashResult: { ok: true, stdout: "No local changes to save", stderr: "" },
+      previousSha: "old-stash-sha",
+      currentSha: "old-stash-sha",
+      status: "?? nested-directory/\n",
+      untrackedFiles: "nested-directory/real-file.txt\0"
+    }),
+    false
+  );
+});
+
+test("git executor allows an explicit merge command", () => {
+  assert.deepEqual(validateGitArgs(["merge", "--no-ff", "feature"]), ["merge", "--no-ff", "feature"]);
+});
+
+test("rebase continuation requires push confirmation before continuing", () => {
+  assert.equal(canContinueRebase({ requiresConfirmation: true, confirmed: false }), false);
+  assert.equal(canContinueRebase({ requiresConfirmation: true, confirmed: true }), true);
+  assert.equal(canContinueRebase({ requiresConfirmation: false, confirmed: false }), true);
+});
 
 async function createRepo(prefix = "gsc-runner-") {
   const repo = await mkdtemp(path.join(os.tmpdir(), prefix));
@@ -368,6 +426,89 @@ test("workflow runner fetches remote refs directly without AI and refreshes stat
   assert.equal(result.summary.branch, "main");
   assert.match(git(repo, ["rev-parse", "--verify", "refs/remotes/origin/main"]).trim(), /^[0-9a-f]{40}$/);
   assert.deepEqual(events.map((item) => item.data.phase), ["Fetching", "Idle"]);
+});
+
+test("workflow runner performs an explicit named merge", async () => {
+  const repo = await createRepo("gsc-merge-runner-");
+  git(repo, ["checkout", "-b", "feature"]);
+  await writeFile(path.join(repo, "feature.txt"), "feature\n", "utf8");
+  git(repo, ["add", "feature.txt"]);
+  git(repo, ["commit", "-m", "feature change"]);
+  git(repo, ["checkout", "main"]);
+
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  const result = await runner.run("merge", { branch: "feature", confirmed: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.merge.ok, true);
+  assert.deepEqual(result.mergeCommit, {
+    sourceBranch: "feature",
+    targetBranch: "main"
+  });
+  assert.equal(git(repo, ["show", "-s", "--format=%P", "HEAD"]).trim().split(/\s+/).length, 2);
+  assert.equal(normalizeNewlines(await readFile(path.join(repo, "feature.txt"), "utf8")), "feature\n");
+});
+
+test("workflow runner creates and switches to a named branch from a clean worktree", async () => {
+  const repo = await createRepo("gsc-create-branch-runner-");
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  const result = await runner.run("create-branch", { branch: "feature/new", confirmed: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.branch, "feature/new");
+  assert.equal(git(repo, ["branch", "--show-current"]).trim(), "feature/new");
+  assert.deepEqual(result.summary.branches.sort(), ["feature/new", "main"]);
+});
+
+test("workflow runner switches to an existing named branch instead of failing", async () => {
+  const repo = await createRepo("gsc-switch-existing-branch-");
+  git(repo, ["branch", "feature/existing"]);
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+
+  const result = await runner.run("create-branch", { branch: "feature/existing", confirmed: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.created, false);
+  assert.equal(result.switched, true);
+  assert.equal(result.summary.branch, "feature/existing");
+  assert.equal(git(repo, ["branch", "--show-current"]).trim(), "feature/existing");
+});
+
+test("workflow runner rejects overlapping repository mutations", async () => {
+  const repo = await createRepo("gsc-lock-runner-");
+  const runner = createWorkflowRunner({
+    config: {
+      repoPath: repo,
+      workflow: { requireConfirmBeforePush: true },
+      ai: {}
+    }
+  });
+  const first = runner.run("merge", { branch: "invalid branch", confirmed: true });
+  await assert.rejects(
+    () => runner.run("merge", { branch: "another-invalid branch", confirmed: true }),
+    /another repository operation is already running/
+  );
+  await assert.rejects(first, /valid named source branch/);
 });
 
 test("workflow runner syncs remote directly with fetch and rebase without AI", async () => {

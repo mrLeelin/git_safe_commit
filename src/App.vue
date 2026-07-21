@@ -116,12 +116,14 @@ const commitResetKey = ref(0);
 const conflictCandidates = ref({});
 const operationNotice = ref(null);
 const AuditRefreshIntervalMs = 3000;
-const pushSuccessActions = new Set(["push", "ai-push", "continue-rebase-and-push", "abort-rebase", "ai-sync-and-push", "restore-tool-stashes"]);
+const pushSuccessActions = new Set(["push", "ai-push", "continue-rebase-and-push", "abort-rebase", "ai-sync-and-push", "restore-tool-stashes", "merge"]);
 const repositoryChangingActions = new Set([
   "inspect",
   "create-recovery",
   "fetch",
   "sync",
+  "merge",
+  "create-branch",
   "push",
   "ai-sync-and-push",
   "resolve-conflict",
@@ -362,7 +364,9 @@ function setDetails(message) {
 function showOperationNotice(action, result = {}) {
   if (!pushSuccessActions.has(action) || result?.ok === false) return;
   const branch = result.summary?.branch || summary.value?.branch || "";
-  const title = action === "continue-rebase-and-push"
+  const title = action === "merge"
+    ? "Merge 已提交"
+    : action === "continue-rebase-and-push"
     ? "变基已继续并推送成功"
     : action === "restore-tool-stashes"
       ? "stash 已恢复并清理"
@@ -371,7 +375,9 @@ function showOperationNotice(action, result = {}) {
     : action === "ai-sync-and-push"
       ? "AI 已同步并推送成功"
       : "推送成功";
-  const message = action === "abort-rebase"
+  const message = action === "merge"
+    ? `已将 ${result.mergeCommit?.sourceBranch || "源分支"} 合入 ${result.mergeCommit?.targetBranch || branch || "当前分支"}，Git 已创建 Merge 提交。`
+    : action === "abort-rebase"
     ? "已执行 git rebase --abort，工作区回到 rebase 之前的状态。"
     : action === "restore-tool-stashes"
     ? `已恢复 ${result.restoredToolStashes?.restored?.length || 0} 个工具 stash，并在恢复成功后删除。`
@@ -710,6 +716,8 @@ function labelAction(action) {
     "create-recovery": zh.createRecovery,
     fetch: zh.fetchRemote,
     sync: zh.aiSync,
+    merge: "Merge branch",
+    "create-branch": "创建分支",
     "resolve-conflict": zh.conflictFiles,
     commit: zh.aiCommit,
     "discard-selected": "丢弃选中",

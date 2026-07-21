@@ -49,6 +49,8 @@ const fileDiffError = ref("");
 const confirmAction = ref(null);
 const mergeBranchName = ref("");
 const mergeBranchMenuOpen = ref(false);
+const createBranchName = ref("");
+const createBranchMenuOpen = ref(false);
 const activeConflictPath = ref("");
 const textConflict = ref(null);
 const textCandidate = ref("");
@@ -56,6 +58,7 @@ const textDraftSource = ref("current");
 const textLineRows = ref([]);
 const tableConflict = ref(null);
 const tableMerge = ref(null);
+const tableLoadError = ref("");
 const tableSheets = ref([]);
 const activeTableSheetName = ref("");
 const tableCandidate = ref("");
@@ -97,6 +100,16 @@ const filteredMergeBranchOptions = computed(() => {
   if (!query) return mergeBranchOptions.value;
   return mergeBranchOptions.value.filter((branch) => branch.toLowerCase().includes(query));
 });
+const createBranchOptions = computed(() => {
+  return (props.summary?.branches || props.status?.branches || [])
+    .filter(Boolean)
+    .sort((left, right) => left.localeCompare(right));
+});
+const filteredCreateBranchOptions = computed(() => {
+  const query = createBranchName.value.trim().toLowerCase();
+  if (!query) return createBranchOptions.value;
+  return createBranchOptions.value.filter((branch) => branch.toLowerCase().includes(query));
+});
 const auditTone = computed(() => {
   if (props.audit?.verdict === "blocked") return "bad";
   if (props.audit?.verdict === "needs_confirmation") return "warn";
@@ -134,6 +147,8 @@ const auditConfirmationText = computed(() => {
   return "确认方式：打开风险文件详情核对；确认后继续执行当前操作。";
 });
 const rebaseInProgress = computed(() => Boolean(props.summary?.rebaseInProgress || props.status?.rebaseInProgress));
+const mergeInProgress = computed(() => Boolean(props.summary?.mergeInProgress || props.status?.mergeInProgress));
+const mergeCommitMessage = computed(() => String(props.summary?.mergeMessage || props.status?.mergeMessage || "").trim());
 const canAbortRebase = computed(() => rebaseInProgress.value && !props.busy);
 const canCommit = computed(() => !commitBlockReason.value && !props.busy);
 const canPush = computed(() => !pushBlockReason.value && !props.busy);
@@ -246,7 +261,20 @@ const tablePreviewColumnIndexes = computed(() => {
   const width = Math.max(...tablePreviewRows.value.map((row) => row.length), 0);
   return Array.from({ length: width }, (_, index) => index);
 });
-const tableKeyColumnOptions = computed(() => tableMerge.value?.keyCandidates || []);
+const tableKeyColumnOptions = computed(() => {
+  const merge = tableMerge.value;
+  const candidates = new Map((merge?.keyCandidates || []).map((candidate) => [candidate.column, candidate]));
+  return Array.from({ length: merge?.columnCount || 0 }, (_, column) => {
+    const candidate = candidates.get(column);
+    if (candidate) return candidate;
+    return {
+      column,
+      header: merge?.cells?.[0]?.[column]?.value || tableColumnLabel(column),
+      overlap: 0,
+      usable: false
+    };
+  });
+});
 const tableAlignmentLabel = computed(() => {
   if (tableAlignmentMode.value === "index") return "按行列";
   if (tableAlignmentMode.value === "key") return tableKeyColumnName(Number(tableKeyColumn.value));
@@ -306,6 +334,12 @@ watch(() => props.commitResetKey, () => {
   clearFileDiffPreview();
   clearAiReview();
 });
+
+watch([mergeInProgress, mergeCommitMessage], () => {
+  if (mergeInProgress.value && mergeCommitMessage.value && !commitMessage.value.trim()) {
+    commitMessage.value = mergeCommitMessage.value;
+  }
+}, { immediate: true });
 
 watch(() => props.config?.repoPath, () => {
   clearAiReview();
@@ -546,6 +580,28 @@ function closeMergeBranchMenu() {
   }, 120);
 }
 
+function runCreateBranch() {
+  const branch = createBranchName.value.trim();
+  if (!branch || props.busy) return;
+  createBranchMenuOpen.value = false;
+  emit("action", "create-branch", { branch, confirmed: true });
+}
+
+function openCreateBranchMenu() {
+  if (!props.busy) createBranchMenuOpen.value = true;
+}
+
+function selectCreateBranch(branch) {
+  createBranchName.value = branch;
+  createBranchMenuOpen.value = false;
+}
+
+function closeCreateBranchMenu() {
+  window.setTimeout(() => {
+    createBranchMenuOpen.value = false;
+  }, 120);
+}
+
 function confirmDiscardSelected() {
   if (!selectedPaths.value.length) {
     const reason = "先选择要丢弃的文件";
@@ -590,6 +646,7 @@ function closeWorkbench() {
   textLineRows.value = [];
   tableConflict.value = null;
   tableMerge.value = null;
+  tableLoadError.value = "";
   tableSheets.value = [];
   activeTableSheetName.value = "";
   tableCandidate.value = "";
@@ -625,7 +682,7 @@ function conflictCandidateFor(file) {
 async function applyCandidateFor(file) {
   const path = file?.path || "";
   const candidate = conflictCandidateFor(file);
-  if (!path || !candidate) return;
+  if (!path || !candidate) return { ok: false, error: "候选文件不可用" };
   applyingCandidatePath.value = path;
   const result = await new Promise((resolve) => {
     emit("apply-candidate", { path, candidate }, resolve);
@@ -638,6 +695,7 @@ async function applyCandidateFor(file) {
   } else {
     workbenchMessage.value = result.error || "应用候选失败";
   }
+  return result;
 }
 
 function applyCurrentCandidate() {
@@ -737,6 +795,9 @@ async function openTableWorkbench(path) {
   tableBothStrategy.value = "rows";
   tableAlignmentMode.value = "auto";
   tableKeyColumn.value = "-1";
+  tableConflict.value = null;
+  tableMerge.value = null;
+  tableLoadError.value = "";
   binaryConflict.value = null;
   binaryChoice.value = "ours";
   candidatePath.value = "";
@@ -745,10 +806,12 @@ async function openTableWorkbench(path) {
     emit("load-table-conflict", { path }, resolve);
   });
   if (!result.ok) {
-    workbenchMessage.value = result.error || "加载失败";
+    tableLoadError.value = result.error || "加载失败";
+    workbenchMessage.value = tableLoadError.value;
     return;
   }
   tableConflict.value = result.tableConflict;
+  tableLoadError.value = "";
   tableSheets.value = result.tableConflict.sheets || [];
   const initialSheetName = result.tableConflict.activeSheetName || tableSheets.value[0]?.name || "";
   setActiveTableSheet(initialSheetName || "");
@@ -763,6 +826,7 @@ async function openBinaryWorkbench(path) {
   textLineRows.value = [];
   tableConflict.value = null;
   tableMerge.value = null;
+  tableLoadError.value = "";
   tableSheets.value = [];
   activeTableSheetName.value = "";
   tableCandidate.value = "";
@@ -1114,7 +1178,7 @@ function tableKeyColumnName(column) {
 }
 
 async function saveTableCandidate() {
-  if (!tableConflict.value || !tableMerge.value) return;
+  if (!tableConflict.value || !tableMerge.value) return "";
   const candidateContent = composeTableDraft(tableMerge.value, { bothStrategy: tableBothStrategy.value });
   tableCandidate.value = candidateContent;
   const result = await new Promise((resolve) => {
@@ -1133,9 +1197,11 @@ async function saveTableCandidate() {
     workbenchMessage.value = message;
     rememberCandidateResult(tableConflict.value.path, result.tableCandidate.candidate, message);
     emit("candidate-created", { path: tableConflict.value.path, candidate: result.tableCandidate.candidate, type: "table" });
+    return result.tableCandidate.candidate;
   } else {
     candidatePath.value = "";
     workbenchMessage.value = result.error || "生成候选失败";
+    return "";
   }
 }
 
@@ -1362,6 +1428,7 @@ async function reviewResolvedRebaseWithAi() {
 async function ensureCommitMessage({ force = false } = {}) {
   const existingMessage = commitMessage.value.trim();
   if (existingMessage && !force) return existingMessage;
+  if (mergeInProgress.value) return existingMessage;
   suggestingMessage.value = true;
   try {
     const message = await new Promise((resolve) => {
@@ -1438,6 +1505,10 @@ async function ensureCommitMessage({ force = false } = {}) {
       </div>
 
       <div class="commit-message">
+        <div v-if="mergeInProgress" class="merge-pending-notice" role="status">
+          <strong>Merge 待提交</strong>
+          <span>已预填 Git 默认 Merge 提交说明；提交后将完成本次 Merge。</span>
+        </div>
         <label>
           <span>{{ labels.commitMessage }}</span>
           <textarea v-model="commitMessage" :placeholder="labels.commitMessagePlaceholder" rows="3"></textarea>
@@ -1504,7 +1575,7 @@ async function ensureCommitMessage({ force = false } = {}) {
       </div>
 
       <div class="commit-actions">
-        <button class="btn secondary suggest" type="button" :disabled="suggestingMessage || !selectedPaths.length" @click="suggestMessage">{{ suggestingMessage ? '生成中...' : 'AI 生成详细说明' }}</button>
+        <button v-if="!mergeInProgress" class="btn secondary suggest" type="button" :disabled="suggestingMessage || !selectedPaths.length" @click="suggestMessage">{{ suggestingMessage ? '生成中...' : 'AI 生成详细说明' }}</button>
         <button class="btn" type="button" :disabled="!canCommit" @click="runCommit">{{ labels.aiCommit }}</button>
         <button class="btn danger discard-selected" type="button" :disabled="Boolean(busy) || !selectedPaths.length" @click="confirmDiscardSelected">丢弃选中</button>
         <span class="disabled-reason">{{ commitBlockReason || "将按选中路径提交" }}</span>
@@ -1637,6 +1708,31 @@ async function ensureCommitMessage({ force = false } = {}) {
       </div>
       <span class="disabled-reason">要求当前工作区干净；发生冲突后请在冲突工作台处理。</span>
     </aside>
+
+    <aside class="action-card create-branch-card">
+      <h3>创建新分支</h3>
+      <p class="next-copy">不存在则创建；已存在则直接切换。</p>
+      <div class="create-branch-current">
+        <span>创建起点</span>
+        <strong>{{ summary?.branch || "未检查" }}</strong>
+      </div>
+      <div class="create-branch-action">
+        <div class="create-branch-picker">
+          <input v-model="createBranchName" class="text-input" type="search" role="combobox" autocomplete="off" aria-autocomplete="list" :aria-expanded="createBranchMenuOpen" placeholder="搜索已有分支或输入新名称" :disabled="Boolean(busy)" @focus="openCreateBranchMenu" @input="openCreateBranchMenu" @blur="closeCreateBranchMenu" @keyup.enter="runCreateBranch">
+          <div v-if="createBranchMenuOpen" class="create-branch-menu" role="listbox">
+            <button v-for="branch in filteredCreateBranchOptions" :key="branch" class="create-branch-option" type="button" role="option" @mousedown.prevent="selectCreateBranch(branch)">
+              {{ branch }}
+            </button>
+            <span v-if="!filteredCreateBranchOptions.length" class="create-branch-empty">没有匹配的已有分支，继续输入即可创建新分支。</span>
+          </div>
+        </div>
+        <button class="btn create-branch-btn" type="button" :disabled="Boolean(busy) || !createBranchName.trim()" @click="runCreateBranch">
+          <span aria-hidden="true">＋</span>
+          <strong>创建 / 切换</strong>
+        </button>
+      </div>
+      <span class="disabled-reason">要求当前工作区干净；操作后会自动切换到目标分支。</span>
+    </aside>
     </div>
   </section>
 
@@ -1698,6 +1794,15 @@ async function ensureCommitMessage({ force = false } = {}) {
   </header>
 
   <section v-if="conflictFiles.length" class="conflict-workbench-shell">
+    <div v-if="tableLoadError" class="workbench-error-panel">
+      <div class="workbench-error-icon" aria-hidden="true">!</div>
+      <div>
+        <h3>表格文件无法解析</h3>
+        <p>{{ tableLoadError }}</p>
+        <small>当前文件被 Git 标记为冲突，但内容不是有效的 XLSX/表格格式。请确认文件没有被当作纯文本写入，或先用 Excel/WPS 检查文件是否能正常打开。</small>
+        <button class="btn secondary workbench-fallback-btn" type="button" @click="openBinaryWorkbench(activeConflictPath)">按完整版本解决（OURS / THEIRS）</button>
+      </div>
+    </div>
     <div v-if="textConflict" class="text-conflict-workbench">
       <div class="settings-card-head">
         <div>
@@ -1804,8 +1909,8 @@ async function ensureCommitMessage({ force = false } = {}) {
     <div v-if="tableConflict && tableMerge" class="table-conflict-workbench">
       <div class="settings-card-head">
         <div>
-          <h3>表格冲突工作台</h3>
-          <p>同一个格子双方都改时手动选择；不同格子的单边修改会自动进入候选表。不会覆盖原文件，不执行 git add。</p>
+          <h3>{{ tableMerge.conflictCount ? '表格冲突工作台' : '表格自动合并工作台' }}</h3>
+          <p>{{ tableMerge.conflictCount ? '同一个格子双方都改时手动选择；不同格子的单边修改会自动进入候选表。不会覆盖原文件，不执行 git add。' : '当前没有同格冲突，已按默认规则生成自动合并结果。确认候选内容后应用并暂存。' }}</p>
         </div>
       </div>
       <div class="workbench-body">
@@ -1843,7 +1948,7 @@ async function ensureCommitMessage({ force = false } = {}) {
               <span>主键列</span>
               <select :value="tableKeyColumn" :disabled="tableAlignmentMode !== 'key' || !tableKeyColumnOptions.length" @change="setTableKeyColumn($event.target.value)">
                 <option v-for="candidate in tableKeyColumnOptions" :key="candidate.column" :value="String(candidate.column)">
-                  {{ tableColumnLabel(candidate.column) }} · {{ candidate.header || '未命名列' }} · overlap {{ candidate.overlap }}
+                  {{ tableColumnLabel(candidate.column) }} · {{ candidate.header || '未命名列' }} · {{ candidate.usable ? `overlap ${candidate.overlap}` : '手动选择' }}
                 </option>
               </select>
             </label>
@@ -1865,7 +1970,7 @@ async function ensureCommitMessage({ force = false } = {}) {
           </button>
         </div>
 
-        <div class="table-decision-grid" :class="{ 'no-conflicts': !tableConflictItems.length }">
+        <div v-if="tableConflictItems.length" class="table-decision-grid">
           <section class="table-conflict-list">
             <div class="table-section-head">
               <strong>冲突队列</strong>
@@ -1958,6 +2063,13 @@ async function ensureCommitMessage({ force = false } = {}) {
             <p class="table-detail-note">BOTH 默认新增一行保留 OURS 和 THEIRS 两份记录；切到新增列时，会在冲突列后插入 THEIRS 列。NONE 会让该候选格子留空。</p>
           </section>
         </div>
+        <div v-else class="table-auto-merge-banner">
+          <span class="choice-state-dot ours" aria-hidden="true"></span>
+          <div>
+            <strong>无同格冲突，默认自动合并</strong>
+            <span>不同单元格的修改已进入下方预览，不需要逐格选择。</span>
+          </div>
+        </div>
 
         <div class="table-side-grid">
           <section v-for="side in ['ours', 'theirs']" :key="side" class="table-side-pane" :class="side">
@@ -2031,7 +2143,7 @@ async function ensureCommitMessage({ force = false } = {}) {
         </section>
 
         <div class="workbench-actions">
-          <button class="btn" type="button" @click="saveTableCandidate">{{ labels.writeConflictCandidate }}</button>
+          <button class="btn" type="button" @click="saveTableCandidate">{{ tableMerge?.conflictCount ? labels.writeConflictCandidate : '写入自动合并候选' }}</button>
           <div class="candidate-result" v-if="candidatePath">
             <span>候选文件已生成：<code>{{ candidatePath }}</code></span>
             <button class="btn secondary apply-candidate-btn" type="button" :disabled="Boolean(busy) || applyingCandidatePath === activeConflictPath" @click="applyCurrentCandidate">{{ applyingCandidatePath === activeConflictPath ? '应用中...' : '应用候选并暂存' }}</button>

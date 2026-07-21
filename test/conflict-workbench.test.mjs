@@ -123,6 +123,31 @@ async function createSparseSpreadsheetConflictRepo() {
   return repo;
 }
 
+async function createLongSparseSpreadsheetConflictRepo() {
+  const repo = await mkdtemp(path.join(os.tmpdir(), "gsc-long-sparse-xlsx-conflict-workbench-"));
+  git(repo, ["init", "-b", "main"]);
+  git(repo, ["config", "user.email", "tool@example.test"]);
+  git(repo, ["config", "user.name", "Tool Test"]);
+  await writeWorkbook(path.join(repo, "data.xlsx"), sparseRows());
+  git(repo, ["add", "."]);
+  git(repo, ["commit", "-m", "initial"]);
+  git(repo, ["switch", "-c", "feature"]);
+  await writeWorkbook(path.join(repo, "data.xlsx"), sparseRows({ row: 178, value: [178, "theirs"] }));
+  git(repo, ["commit", "-am", "feature edit"]);
+  git(repo, ["switch", "main"]);
+  await writeWorkbook(path.join(repo, "data.xlsx"), sparseRows({ row: 179, value: [179, "ours"] }));
+  git(repo, ["commit", "-am", "main edit"]);
+  assert.throws(() => git(repo, ["merge", "feature"]));
+  return repo;
+}
+
+function sparseRows(change = null) {
+  const rows = Array.from({ length: 179 }, () => []);
+  rows[0] = ["id", "name"];
+  if (change) rows[change.row - 1] = change.value;
+  return rows;
+}
+
 async function createMultiSheetSpreadsheetConflictRepo() {
   const repo = await mkdtemp(path.join(os.tmpdir(), "gsc-multisheet-xlsx-conflict-workbench-"));
   git(repo, ["init", "-b", "main"]);
@@ -362,16 +387,17 @@ test("table conflict workbench loads XLSX stages and writes an XLSX candidate wi
   assert.match(git(repo, ["status", "--short"]), /^UU data\.xlsx/m);
 });
 
-test("table conflict workbench compacts pure empty XLSX rows", async () => {
+test("table conflict workbench preserves pure empty XLSX rows", async () => {
   const repo = await createSparseSpreadsheetConflictRepo();
 
   const loaded = await loadTableConflict({ repoPath: repo, filePath: "data.xlsx" });
-  const conflict = loaded.tableConflict.merge.cells[2][1];
+  assert.equal(loaded.tableConflict.merge.rowCount, 4);
+  const conflict = loaded.tableConflict.merge.cells[3][1];
   conflict.choice = "theirs";
   const candidate = await writeTableCandidate({
     repoPath: repo,
     filePath: "data.xlsx",
-    content: "id,name\n0,\"line\nbreak\"\n1,Ally\n",
+    content: "id,name\n0,\"line\nbreak\"\n\n1,Ally\n",
     source: "table",
     cellChoices: [{ row: 2, column: 1, label: "B3", choice: "theirs" }]
   });
@@ -379,12 +405,36 @@ test("table conflict workbench compacts pure empty XLSX rows", async () => {
   await workbook.xlsx.load(await readFile(path.join(repo, candidate.tableCandidate.candidate)));
   const sheet = workbook.worksheets[0];
 
-  assert.equal(conflict.label, "B3");
+  assert.equal(conflict.label, "B4");
   assert.equal(conflict.ours, "Alicia");
   assert.equal(conflict.theirs, "Ally");
   assert.equal(sheet.getCell("B2").value, "line\nbreak");
-  assert.equal(sheet.getCell("B3").value, "Ally");
-  assert.equal(sheet.rowCount, 3);
+  assert.equal(sheet.getCell("B3").value, null);
+  assert.equal(sheet.getCell("B4").value, "Ally");
+  assert.equal(sheet.rowCount, 4);
+});
+
+test("table conflict workbench keeps sparse XLSX data at rows 178 and 179", async () => {
+  const repo = await createLongSparseSpreadsheetConflictRepo();
+  const loaded = await loadTableConflict({ repoPath: repo, filePath: "data.xlsx" });
+  const content = `id,name\n${"\n".repeat(176)}178,theirs\n179,ours\n`;
+  const candidate = await writeTableCandidate({
+    repoPath: repo,
+    filePath: "data.xlsx",
+    content,
+    source: "table"
+  });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await readFile(path.join(repo, candidate.tableCandidate.candidate)));
+  const sheet = workbook.worksheets[0];
+
+  assert.equal(loaded.tableConflict.merge.rowCount, 179);
+  assert.equal(sheet.getCell("A114").value, null);
+  assert.equal(sheet.getCell("B115").value, null);
+  assert.equal(sheet.getCell("A178").value, "178");
+  assert.equal(sheet.getCell("B178").value, "theirs");
+  assert.equal(sheet.getCell("A179").value, 179);
+  assert.equal(sheet.getCell("B179").value, "ours");
 });
 
 test("table conflict workbench exposes and writes conflicts from a second XLSX sheet", async () => {

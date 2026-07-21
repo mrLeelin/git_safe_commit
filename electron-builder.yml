@@ -2,16 +2,46 @@ appId: com.git-safe-commit-tool
 productName: Git Safe Commit Tool
 
 directories:
-  output: release
+  output: output
+
+files:
+  - electron/**
+  - lib/**
+  - dist/**
+  - server.mjs
+  - package.json
+  - "!src/**"
+  - "!test/**"
+  - "!docs/**"
+  - "!.agents/**"
+  - "!.amo/**"
+  - "!.codex/**"
+  - "!.claude/**"
+  - "!.kiro/**"
+  - "!.omx/**"
+  - "!output/**"
+  - "!node_modules/.cache/**"
+  - "!*.ps1"
+  - "!*.bat"
+  - "!README.md"
+  - "!config.example.json"
 
 win:
+  signAndEditExecutable: false
   target:
-    - target: portable
+    - target: nsis
       arch:
         - x64
   sign: false
 
-portable:
-  artifactName: "git-safe-commit-${version}.exe"
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: "Git Safe Commit Tool"
+  deleteAppDataOnUninstall: false
+
+artifactName: "git-safe-commit-${version}-setup.exe"
 
 asar: true

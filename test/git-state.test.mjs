@@ -89,6 +89,31 @@ test("summarizeGitState does not block whitespace-only diff check failures", () 
   assert.deepEqual(summary.blockers, []);
 });
 
+test("summarizeGitState exposes Git's pending Merge message", () => {
+  const summary = summarizeGitState({
+    branch: "feature/login2",
+    branches: [],
+    upstream: "",
+    ahead: 0,
+    behind: 0,
+    cleanWorktree: false,
+    staged: [{ status: "M", path: "src/Constant.xlsx" }],
+    unstaged: [],
+    untracked: [],
+    unmerged: [],
+    conflictMarkers: [],
+    rebaseInProgress: false,
+    mergeInProgress: true,
+    mergeMessage: "Merge branch 'feature/login' into feature/login2\n\n# Conflicts:\n#\tsrc/Constant.xlsx\n",
+    excel: { files: [] },
+    rebaseTarget: { paths: [], excelPaths: [], highRiskPaths: [] }
+  });
+
+  assert.equal(summary.mergeInProgress, true);
+  assert.match(summary.mergeMessage, /Merge branch 'feature\/login' into feature\/login2/);
+  assert.match(summary.mergeMessage, /#\t?src\/Constant\.xlsx/);
+});
+
 test("summarizeGitState blocks rebase target Excel files that cannot be opened exclusively", () => {
   const summary = summarizeGitState({
     branch: "main",
